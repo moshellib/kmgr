@@ -1,0 +1,5 @@
+Makefile text eol=lf
+debian/* text eol=lf
+resources/*.sh text eol=lf
+resources/*.service text eol=lf
+resources/*.cfg text eol=lf

@@ -1,0 +1,9 @@
+Template: kmgr/install-gu
+Type: boolean
+Default: false
+Description: Enable the optional KMGR GU service?
+ The KMGR UUT service is always enabled. Enable this option only if
+ this Raspberry Pi also manages a golden unit (GU).
+ .
+ Both service files are included in the package. Selecting No leaves
+ the GU service stopped and disabled.

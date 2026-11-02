@@ -1,0 +1,7 @@
+#!/bin/sh
+set -e
+
+. /usr/share/debconf/confmodule
+
+db_input high kmgr/install-gu || test "$?" -eq 30
+db_go

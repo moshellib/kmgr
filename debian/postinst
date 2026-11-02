@@ -1,0 +1,29 @@
+#!/bin/sh
+set -e
+
+. /usr/share/debconf/confmodule
+
+if [ "$1" = configure ]; then
+    if ! getent passwd kmgr >/dev/null; then
+        adduser --system --group --home /nonexistent --no-create-home kmgr
+    fi
+fi
+
+#DEBHELPER#
+
+if [ "$1" = configure ]; then
+    db_get kmgr/install-gu
+    install_gu="$RET"
+    db_stop
+    if [ "$install_gu" = true ]; then
+        deb-systemd-helper enable kmgr_gu.service >/dev/null
+        if [ -d /run/systemd/system ]; then
+            deb-systemd-invoke restart kmgr_gu.service
+        fi
+    else
+        deb-systemd-helper disable kmgr_gu.service >/dev/null
+        if [ -d /run/systemd/system ]; then
+            deb-systemd-invoke stop kmgr_gu.service
+        fi
+    fi
+fi

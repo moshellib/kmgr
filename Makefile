@@ -5,6 +5,20 @@ KMDOBJS = obj/main.o obj/sock.o obj/framer.o obj/seeprom.o obj/log.o obj/cmnutil
 
 all: kmgr
 
+.PHONY: all clean install deb
+
+install: kmgr
+	install -D -m 0755 kmgr $(DESTDIR)/usr/bin/kmgr
+	install -d $(DESTDIR)/etc/kmgr $(DESTDIR)/usr/local/bin $(DESTDIR)/usr/lib/systemd/system $(DESTDIR)/usr/share/kmgr/kfs
+	install -m 0644 resources/*.cfg $(DESTDIR)/etc/kmgr/
+	install -m 0755 resources/*.sh $(DESTDIR)/usr/local/bin/
+	install -m 0644 resources/*.service $(DESTDIR)/usr/lib/systemd/system/
+	install -m 0644 kfs/z_skm.hex $(DESTDIR)/usr/share/kmgr/kfs/
+
+deb:
+	chmod +x debian/rules
+	dpkg-buildpackage -us -uc -b
+
 kmgr: $(KMDOBJS)
 	gcc $(KMDOBJS) -lrt -lpthread -o kmgr
 
@@ -100,4 +114,3 @@ cu0:
 
 cu1:
 	xterm -e cu -l /dev/ttyUSB1 -s 115200 &
-

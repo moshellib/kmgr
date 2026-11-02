@@ -26,6 +26,14 @@
 /CMakeCache.txt
 /compile_commands.json
 
+# Debian package build outputs
+/debian/.debhelper/
+/debian/debhelper-build-stamp
+/debian/files
+/debian/kmgr/
+/debian/*.debhelper
+/debian/*.substvars
+
 # Editor and operating-system files
 *~
 *.swp

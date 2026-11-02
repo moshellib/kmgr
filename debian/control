@@ -1,0 +1,14 @@
+Source: kmgr
+Section: utils
+Priority: optional
+Maintainer: KMGR Maintainers <root@localhost>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: kmgr
+Architecture: arm64 armhf
+Depends: ${shlibs:Depends}, ${misc:Depends}, adduser, init-system-helpers
+Description: KMGR serial device manager for Raspberry Pi
+ Runs the UUT device manager and optionally the GU device manager
+ as systemd services.

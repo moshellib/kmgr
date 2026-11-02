@@ -1,2 +1,2 @@
 #!/bin/bash
-bin/kmgr etc/env1.cfg
+exec /usr/bin/kmgr /etc/kmgr/env1.cfg

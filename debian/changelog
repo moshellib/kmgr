@@ -1,0 +1,6 @@
+kmgr (1.0.0) noble; urgency=medium
+
+  * Package KMGR for Raspberry Pi running Ubuntu 24.04.
+  * Always enable the UUT service and offer the GU service through debconf.
+
+ -- KMGR Maintainers <root@localhost>  Mon, 02 Nov 2026 19:00:00 +0000

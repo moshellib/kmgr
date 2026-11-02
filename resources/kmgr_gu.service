@@ -1,13 +1,14 @@
 [Unit]
 Description=Start Siklu Kmgr for GU
-After=multi-user.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/siklumgr/
-ExecStart=/opt/siklumgr/kmgr_gu.sh
+WorkingDirectory=/usr/share/kmgr
+ExecStart=/usr/local/bin/kmgr_gu.sh
 Restart=always
-User=pi
+RestartSec=5
+User=kmgr
+SupplementaryGroups=dialout
 
 [Install]
 WantedBy=multi-user.target

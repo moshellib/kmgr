@@ -1,0 +1,17 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	$(MAKE) all
+
+override_dh_auto_install:
+	$(MAKE) install DESTDIR=$(CURDIR)/debian/kmgr
+
+# /usr/local/bin is explicitly required for the supplied launch scripts.
+override_dh_usrlocal:
+
+override_dh_installsystemd:
+	dh_installsystemd kmgr_uut.service
+	dh_installsystemd --no-enable --no-start kmgr_gu.service
