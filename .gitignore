@@ -1,0 +1,34 @@
+# Build outputs from the project makefile
+/obj/
+/kmgr
+
+# Compiled C/C++ artifacts
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.so.*
+*.dll
+*.dylib
+*.exe
+*.d
+*.hex*
+
+# Core dumps
+/core
+/core.*
+
+# Common generated build directories and metadata
+/build/
+/cmake-build-*/
+/CMakeFiles/
+/CMakeCache.txt
+/compile_commands.json
+
+# Editor and operating-system files
+*~
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
