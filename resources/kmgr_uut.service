@@ -1,0 +1,13 @@
+[Unit]
+Description=Start Siklu Kmgr for UUT
+After=multi-user.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/siklumgr/
+ExecStart=/opt/siklumgr/kmgr_uut.sh
+Restart=always
+User=pi
+
+[Install]
+WantedBy=multi-user.target
