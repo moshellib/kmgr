@@ -57,6 +57,13 @@ recommended). The packaging also permits `armhf` when built in a matching
 32-bit environment. Do not package the prebuilt binary or object files from
 another system; `dpkg-buildpackage` cleans and rebuilds the application.
 
+The package requires the correct K60 firmware image, `z_skm.hex`, supplied
+separately. Place it at `kfs/z_skm.hex` before building, or select an existing
+image with `make deb K60_FIRMWARE=/absolute/path/z_skm.hex`. The selected image
+is always installed as `/usr/share/kmgr/kfs/z_skm.hex`. Packaging stops early
+if the source image is missing, unreadable or empty; it must not be replaced
+with an empty placeholder. Compilation and `make test` do not require it.
+
 ```sh
 sudo apt update
 sudo apt install build-essential debhelper dpkg-dev

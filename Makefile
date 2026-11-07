@@ -1,12 +1,14 @@
 
 CC = gcc
 CFLAGS = -W -O2 -g -DFRAMER_ALLOW_HANDLERS=1 -DFIX_ENDIAN=0
+K60_FIRMWARE ?= kfs/z_skm.hex
+export K60_FIRMWARE
 KMDOBJS = obj/main.o obj/sock.o obj/framer.o obj/seeprom.o obj/log.o obj/cmnutil.o obj/kio.o obj/kmgr.o obj/wdr85100.o obj/entry.o obj/prog.o obj/s19.o obj/serial.o obj/seriallinux.o obj/bcm85100_api.o obj/endian.o obj/hostCommLayer.o obj/hostDriver.o obj/utils.o obj/cmnstruct_api.o 
 MANAGEMENT_TEST_SRCS = $(filter-out main.c kmgr.c,$(wildcard *.c loader/*.c brcm/*.c))
 
 all: kmgr
 
-.PHONY: all clean install deb test-loader test-core test-brcm test-protocol test-serial test-management test
+.PHONY: all clean install deb check-firmware test-loader test-core test-brcm test-protocol test-serial test-management test
 
 test: test-loader test-core test-brcm test-protocol test-serial test-management
 
@@ -40,15 +42,22 @@ test-loader:
 	$(CC) $(CFLAGS) -I. tests/loader_entry_test.c loader/entry.c -o obj/loader_entry_test
 	./obj/loader_entry_test
 
-install: kmgr
+check-firmware:
+	@if test ! -f "$(K60_FIRMWARE)" || test ! -r "$(K60_FIRMWARE)" || test ! -s "$(K60_FIRMWARE)"; then \
+		printf '%s\n' "ERROR: Required K60 firmware is missing, unreadable or empty: $(K60_FIRMWARE)" \
+			"Provide the correct z_skm.hex at kfs/z_skm.hex or set K60_FIRMWARE=/absolute/path/z_skm.hex." >&2; \
+		exit 1; \
+	fi
+
+install: check-firmware kmgr
 	install -D -m 0755 kmgr $(DESTDIR)/usr/bin/kmgr
 	install -d $(DESTDIR)/etc/kmgr $(DESTDIR)/usr/local/bin $(DESTDIR)/usr/lib/systemd/system $(DESTDIR)/usr/share/kmgr/kfs
 	install -m 0644 resources/*.cfg $(DESTDIR)/etc/kmgr/
 	install -m 0755 resources/*.sh $(DESTDIR)/usr/local/bin/
 	install -m 0644 resources/*.service $(DESTDIR)/usr/lib/systemd/system/
-	install -m 0644 kfs/z_skm.hex $(DESTDIR)/usr/share/kmgr/kfs/
+	install -m 0644 "$(K60_FIRMWARE)" $(DESTDIR)/usr/share/kmgr/kfs/z_skm.hex
 
-deb:
+deb: check-firmware
 	chmod +x debian/rules
 	dpkg-buildpackage -us -uc -b
 
