@@ -86,6 +86,31 @@ int SikluGetRemoteVersion(char *version, int vsize);
 
 extern const char an2295Version[];
 
+static int convert_and_load_image(char *file, T_SIKLU_K60_HEADER *header)
+{
+	char output_file[] = "/tmp/kmgr-image-XXXXXX";
+	int output_fd;
+	int result = 0;
+
+	output_fd = mkstemp(output_file);
+	if(output_fd < 0)
+	{
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to create temporary firmware file: %s", strerror(errno));
+		return -1;
+	}
+	close(output_fd);
+
+	if(SikluConvert(file, output_file, 0x4080, header) < 0)
+		result = -1;
+	else if(load_siklu_image(output_file) < 0)
+		result = -2;
+
+	if(unlink(output_file) < 0)
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to remove temporary firmware '%s': %s", output_file, strerror(errno));
+
+	return result;
+}
+
 int loader_entry(char *dev_name, char *speed, char *file, int force_burn)
 {
 	int i;
@@ -115,8 +140,8 @@ int loader_entry(char *dev_name, char *speed, char *file, int force_burn)
 		return 1;
 
 	// read S19 file
-	if(SikluConvert(file, "/tmp/out.bin", 0x4080, &header) < 0) return -1;
-	if(load_siklu_image("/tmp/out.bin") < 0) return -2;
+	int conversion_rc = convert_and_load_image(file, &header);
+	if(conversion_rc != 0) return conversion_rc;
 
 	int mcu_info_rc;
 
@@ -264,8 +289,8 @@ int orig_main(int argc, char *argv[ ])
 		return 1;
 
 	// read S19 file
-	if(SikluConvert(argv[argc-1],"/tmp/out.bin",0x4080,&header) < 0) return -1;
-	if(load_siklu_image("/tmp/out.bin") < 0) return -2;
+	int conversion_rc = convert_and_load_image(argv[argc-1], &header);
+	if(conversion_rc != 0) return conversion_rc;
 #if 0
 	if(read_s19(argv[argc-1], &image) < 0)
 		exit(2);
@@ -436,10 +461,16 @@ int SikluConvert(char * sFileName,char * outputFileName,UINT32 run_address, T_SI
 
 	// read s3 file
 	if(read_s19(sFileName, &image) < 0)
+	{
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to read firmware '%s'; check kfs path, permissions and S-record format", sFileName);
 		return -1;
+	}
 	// masquerade vector table
 	if(setup_vect_tbl(0x00004080 , 0x0) < 0)
+	{
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to prepare vector table for firmware '%s'", sFileName);
 		return -1;
+	}
 
 	// find first and last valid byte
 	for(start_addr=0; start_addr<MAX_ADDRESS; start_addr++)
@@ -468,7 +499,7 @@ int SikluConvert(char * sFileName,char * outputFileName,UINT32 run_address, T_SI
 	file = fopen(outputFileName,"wb");
 	if (!file)
 	{
-		//printf("Failed to open output file '%s' for writing\r\n",outputFileName);
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to open converted firmware '%s' for writing: %s", outputFileName, strerror(errno));
 		 return -1;
 	}
 	CRC_ResetCRC(&image_crc,0xFFFF);
