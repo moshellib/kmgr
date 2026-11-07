@@ -47,6 +47,7 @@
 #include "hostCommLayer.h"
 #include "hostDriver.h"
 #include "endian.h"
+#include "diagnostics.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // COM Layer DEFINES
@@ -210,16 +211,16 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ComConfigure(BYTE deviceIndex, BCM85100_COM
     bcm85100HostApiMutexGet(deviceIndex);
 
 
-    if (deviceIndex > BCM85100_DEVICES_NUM)
+    if (deviceIndex >= BCM85100_DEVICES_NUM)
     {
         bcm85100HostApiMutexRelease(deviceIndex);
-        return (BCM85100_INVALID_DEVICE_INDEX_E);
+        return BCM85100_LOG_STATUS(BCM85100_INVALID_DEVICE_INDEX_E);
     }
 
     if ((gpMedia != BCM85100_COM_MEDIA_NULL_E) || (mcMedia > BCM85100_COM_MEDIA_IP_CLIENT_E))
     {
         bcm85100HostApiMutexRelease(deviceIndex);
-        return (BCM85100_INVALID_MEDIA_E);
+        return BCM85100_LOG_STATUS(BCM85100_INVALID_MEDIA_E);
     }
 
     // configure endianity for future req/resp swapping
@@ -240,6 +241,8 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ComConfigure(BYTE deviceIndex, BCM85100_COM
 /////////////////////////////////////////////////////////////////////////////////
 BCM85100_ERROR_MSG_ENUM BCM85100_API_ComTimeoutSet(BYTE deviceIndex, UINT32 timeoutInMilli)
 {
+    if(deviceIndex >= BCM85100_DEVICES_NUM)
+        return BCM85100_LOG_STATUS(BCM85100_INVALID_DEVICE_INDEX_E);
     bcm85100HostApiMutexGet(deviceIndex);
     gBcm85100Database[deviceIndex].rxTimeoutMilli = timeoutInMilli;
     bcm85100HostApiMutexRelease(deviceIndex);
@@ -297,7 +300,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ComMessageForward(BYTE *pReqBuffer, INT32 r
     // copy response to user's buffer and return
     memcpy(pRespBuffer, localResponse, localLen + BCM85100_IP_PROTOCOL_HEADER_LEN);
     *pRespLen = localLen + BCM85100_IP_PROTOCOL_HEADER_LEN;
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 BCM85100_ERROR_MSG_ENUM bcm85100HostBootFwCommBuildSendAndReceive(BYTE                     deviceIndex,           // to which device to send
@@ -314,7 +317,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100HostBootFwCommBuildSendAndReceive(BYTE          
     UINT32 rxLen;
     if (pDbRecord->mcMedia == BCM85100_COM_MEDIA_NULL_E)
     {
-        return (BCM85100_MEDIA_NOT_INITIALIZED_E);
+        return BCM85100_LOG_STATUS(BCM85100_MEDIA_NOT_INITIALIZED_E);
     }
     #ifdef HOST_PROTOCOL_TX_LOG
     if (pfHostMsg != NULL)
@@ -331,7 +334,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100HostBootFwCommBuildSendAndReceive(BYTE          
     retVal = bcm85100MessageSend(pDbRecord, BCM85100_SPI_BOOTFW); // BootFw Operation
     if (retVal != BCM85100_SUCCESS_MSG_E)
     {
-        return (retVal);
+        return BCM85100_LOG_STATUS(retVal);
     }
     if (opcode  ==  BCM85100_COM_BOOT_HEADER_MSG_OPCODE_E) //W.A for ST only , let bootwf time erase flash if necessary
     {
@@ -341,7 +344,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100HostBootFwCommBuildSendAndReceive(BYTE          
     retVal = bcm85100MessageReceive(pDbRecord);
     if (retVal != BCM85100_SUCCESS_MSG_E)
     {
-        return (retVal);
+        return BCM85100_LOG_STATUS(retVal);
     }
     #ifdef HOST_PROTOCOL_TX_LOG
     if (pfHostMsg != NULL)
@@ -362,7 +365,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100HostBootFwCommBuildSendAndReceive(BYTE          
     }
     *pActualRxLen = rxLen;
     *pStatus = retVal;
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 ///////////////////////////////////////////////////////////////////////////////
 //  FUNCTION: bcm85100HostCommBuildSendAndReceive
@@ -383,7 +386,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100HostCommBuildSendAndReceive(BYTE                
     // if media not initialized
     if (pDbRecord->mcMedia == BCM85100_COM_MEDIA_NULL_E)
     {
-        return (BCM85100_MEDIA_NOT_INITIALIZED_E);
+        return BCM85100_LOG_STATUS(BCM85100_MEDIA_NOT_INITIALIZED_E);
     }
 
     #ifdef HOST_PROTOCOL_TX_LOG
@@ -405,7 +408,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100HostCommBuildSendAndReceive(BYTE                
     retVal = bcm85100MessageSend(pDbRecord, BCM85100_SPI_NO_BOOTFW); // Normal Operation
     if (retVal != BCM85100_SUCCESS_MSG_E)
     {
-        return (retVal);
+        return BCM85100_LOG_STATUS(retVal);
     }
 
 
@@ -413,7 +416,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100HostCommBuildSendAndReceive(BYTE                
     retVal = bcm85100MessageReceive(pDbRecord);
     if (retVal != BCM85100_SUCCESS_MSG_E)
     {
-        return (retVal);
+        return BCM85100_LOG_STATUS(retVal);
     }
 
     #ifdef HOST_PROTOCOL_TX_LOG
@@ -440,7 +443,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100HostCommBuildSendAndReceive(BYTE                
     *pActualRxLen = rxLen;
     *pStatus = retVal;
 
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 
@@ -460,7 +463,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100HostCommBuildSend(BYTE                      devi
     // if media is NULL, cannot do anything, media not initialized
     if (pDbRecord->mcMedia == BCM85100_COM_MEDIA_NULL_E)
     {
-        return (BCM85100_MEDIA_NOT_INITIALIZED_E);
+        return BCM85100_LOG_STATUS(BCM85100_MEDIA_NOT_INITIALIZED_E);
     }
 
     #ifdef HOST_PROTOCOL_TX_LOG
@@ -500,25 +503,25 @@ BCM85100_ERROR_MSG_ENUM bcm85100MessageForward(BYTE deviceIndex, BYTE *pReqBuffe
     // check if this device has ever been configured
     if (pDest->mcMedia == BCM85100_COM_MEDIA_NULL_E)
     {
-        return (BCM85100_MEDIA_NOT_INITIALIZED_E);
+        return BCM85100_LOG_STATUS(BCM85100_MEDIA_NOT_INITIALIZED_E);
     }
 
     // check if forwarding is disabled prior to taking mutex
     if (pDest->enableForwarding == FALSE)
     {
-        return (BCM85100_HOST_BUSY_E);
+        return BCM85100_LOG_STATUS(BCM85100_HOST_BUSY_E);
     }
 
     // boot message? ignore it with error
     if (reqLen > BCM85100_HOST_PROTOCOL_MAX_MSG_LEN)
     {
-        return (BCM85100_INVALID_MSG_RX_E);
+        return BCM85100_LOG_STATUS(BCM85100_INVALID_MSG_RX_E);
     }
 
     // these boot cases are not expected to return an answer, and cannot be forwarded
     if (pReqBuffer[BCM85100_OPCODE_OFFSET] == BCM85100_COM_JUMP_TO_FW_MSG_OPCODE_E)
     {
-        return (BCM85100_INVALID_MSG_OPCODE_E);
+        return BCM85100_LOG_STATUS(BCM85100_INVALID_MSG_OPCODE_E);
     }
 
     bcm85100HostApiMutexGet(deviceIndex);
@@ -577,7 +580,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100MessageForward(BYTE deviceIndex, BYTE *pReqBuffe
 
     bcm85100HostApiMutexRelease(deviceIndex);
 
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -648,7 +651,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100HostCommRawDataSend(BYTE deviceIndex, BYTE *pBuf
         break;
     }
 
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -752,7 +755,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100MessageSend(BCM85100_DATABASE_STRUCT *pDbRecord 
         break;
     }
 
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -848,7 +851,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100SpiMessageSend(BCM85100_DATABASE_STRUCT *pDbReco
         // 1 sec ?
         if( (bcm85100HostTimeGet(startTime) >= BCM85100_DEFAULT_TIMEOUT_MILLI) || (flagsSent >= BCM85100_SPI_RX_MSG_LARGEST_SIZE) )  
         {
-            return BCM85100_ERROR_IN_COM_RECEIVE_E;
+            return BCM85100_LOG_STATUS(BCM85100_ERROR_IN_COM_RECEIVE_E);
         }
 
         //wait for DATA READY low for transmit
@@ -1014,7 +1017,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100MessageReceive(BCM85100_DATABASE_STRUCT *pDbReco
         break;
     }
 
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 
@@ -1045,7 +1048,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100UartMessageReceive(BCM85100_DATABASE_STRUCT *pDb
             }
             #endif
 
-            return (BCM85100_INVALID_MEDIA_E);
+            return BCM85100_LOG_STATUS(BCM85100_INVALID_MEDIA_E);
         }
 
         // what's the time?
@@ -1060,7 +1063,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100UartMessageReceive(BCM85100_DATABASE_STRUCT *pDb
                 fflush(pfHostMsg);
             }
             #endif
-            return (BCM85100_ERROR_IN_COM_RECEIVE_E);
+            return BCM85100_LOG_STATUS(BCM85100_ERROR_IN_COM_RECEIVE_E);
         }
         // get and process 1 byte at a time
         bcm85100HostUartDataReceive(pDbRecord->deviceIndex, &val, 1, (UINT16)timeRemainingInMilli, &bytesRead);
@@ -1072,7 +1075,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100UartMessageReceive(BCM85100_DATABASE_STRUCT *pDb
                 fprintf(pfHostMsg, "ERR2\n");
             }
             #endif
-            return (BCM85100_ERROR_IN_COM_RECEIVE_E); //here it falls and make MDP print Communication error : No response (1)
+            return BCM85100_LOG_STATUS(BCM85100_ERROR_IN_COM_RECEIVE_E); //here it falls and make MDP print Communication error : No response (1)
             //because the FW don't answer at all, cause it didn't succeed to analyze corectly the command (cause of OR)
         }
 
@@ -1085,7 +1088,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100UartMessageReceive(BCM85100_DATABASE_STRUCT *pDb
                 fprintf(pfHostMsg, "ERR3\n");
             }
             #endif
-            return (retVal);
+            return BCM85100_LOG_STATUS(retVal);
         }
         #ifdef HOST_PROTOCOL_TX_LOG
         if (pfHostMsg != NULL)
@@ -1130,7 +1133,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100SpiMessageReceive(BCM85100_DATABASE_STRUCT *pDbR
             fprintf(pfHostMsg, "SPI-Rx ERR (time = %ld, dev = %d): SPI RDY not detected\n", bcm85100HostTickGet(), pDbRecord->deviceIndex);
         }
         #endif
-        return BCM85100_ERROR_IN_COM_RECEIVE_E;
+        return BCM85100_LOG_STATUS(BCM85100_ERROR_IN_COM_RECEIVE_E);
     }
 
     #ifdef HOST_PROTOCOL_TX_LOG
@@ -1158,7 +1161,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100SpiMessageReceive(BCM85100_DATABASE_STRUCT *pDbR
                 fflush(pfHostMsg);
             }
             #endif
-            return (BCM85100_ERROR_IN_COM_RECEIVE_E);
+            return BCM85100_LOG_STATUS(BCM85100_ERROR_IN_COM_RECEIVE_E);
         }
 
         if (pDbRecord->rxState ==  BCM85100_RXH_IN_MSG_E)
@@ -1186,7 +1189,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100SpiMessageReceive(BCM85100_DATABASE_STRUCT *pDbR
                 fflush(pfHostMsg);
             }
             #endif
-            return BCM85100_INVALID_MSG_RX_E;
+            return BCM85100_LOG_STATUS(BCM85100_INVALID_MSG_RX_E);
         }
         pDbRecord->rxReceivedSize += estimatedMsgSize;
         bcm85100HostSpiDataReceive(pDbRecord->deviceIndex, txBuf, rxBuf, estimatedMsgSize);
@@ -1213,7 +1216,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100SpiMessageReceive(BCM85100_DATABASE_STRUCT *pDbR
 
                 bcm85100HostSleep(50);  //wait a little bit to enable FW Rx reconfigure
 
-                return (retVal);
+                return BCM85100_LOG_STATUS(retVal);
             }
 
             if (isComplete)
@@ -1230,7 +1233,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100SpiMessageReceive(BCM85100_DATABASE_STRUCT *pDbR
                 fprintf(pfHostMsg, "ERR6\n");
             }
             #endif
-            return BCM85100_INVALID_MSG_RX_E;
+            return BCM85100_LOG_STATUS(BCM85100_INVALID_MSG_RX_E);
         }
     }
 
@@ -1274,7 +1277,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100IpClientMessageReceive(BCM85100_DATABASE_STRUCT 
                 fflush(pfHostMsg);
             }
             #endif
-            return (BCM85100_INVALID_MEDIA_E);
+            return BCM85100_LOG_STATUS(BCM85100_INVALID_MEDIA_E);
         }
 
         // wait for packet, up to current timeout for it (can be any arbitrary)
@@ -1289,7 +1292,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100IpClientMessageReceive(BCM85100_DATABASE_STRUCT 
                 fflush(pfHostMsg);
             }
             #endif
-            return (BCM85100_ERROR_IN_COM_RECEIVE_E);
+            return BCM85100_LOG_STATUS(BCM85100_ERROR_IN_COM_RECEIVE_E);
         }
 
         #ifdef HOST_PROTOCOL_TX_LOG
@@ -1323,7 +1326,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100IpClientMessageReceive(BCM85100_DATABASE_STRUCT 
         retVal = localMsg[BCM85100_IP_PROTOCOL_GW_ERROR_OFFSET];
         if (retVal != BCM85100_SUCCESS_MSG_E)
         {
-            return (retVal);
+            return BCM85100_LOG_STATUS(retVal);
         }
 
         // skip IP header, and copy internals to local database
@@ -1365,7 +1368,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100MiiDeviceMessageReceive(BCM85100_DATABASE_STRUCT
         }
         #endif
 
-        return (BCM85100_INVALID_MEDIA_E);
+        return BCM85100_LOG_STATUS(BCM85100_INVALID_MEDIA_E);
     }
 
     // wait for packet, up to current timeout for it (can be any arbitrary)
@@ -1380,7 +1383,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100MiiDeviceMessageReceive(BCM85100_DATABASE_STRUCT
         }
         #endif
 
-        return (BCM85100_ERROR_IN_COM_RECEIVE_E);
+        return BCM85100_LOG_STATUS(BCM85100_ERROR_IN_COM_RECEIVE_E);
     }
 
     // check response
@@ -1476,7 +1479,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100RxStateMachine(BCM85100_DATABASE_STRUCT   *pDbRe
                 // good message - break out
                 pDbRecord->rxState = BCM85100_RXH_IDLE_E;
                 *isComplete = TRUE;
-                return (retVal);
+                return BCM85100_LOG_STATUS(retVal);
             }
             else
             {
@@ -1534,7 +1537,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100RxStateMachine(BCM85100_DATABASE_STRUCT   *pDbRe
         retVal = BCM85100_ERROR_IN_COM_RECEIVE_E;
     }
 
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1594,7 +1597,7 @@ BCM85100_ERROR_MSG_ENUM  bcm85100RxMessageParse(BCM85100_DATABASE_STRUCT *pDbRec
     }
 
     // will be silently discarded
-    return (BCM85100_INVALID_MSG_RX_E);
+    return BCM85100_LOG_STATUS(BCM85100_INVALID_MSG_RX_E);
 }
 
 

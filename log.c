@@ -98,6 +98,10 @@ void klog_set_filter_level(int subj, int type, int level) {
 void klog(int subject, int level, char *fmt, ...) {
 	char buf[256];
 	va_list args;
+	if(subject < 0 || subject >= KLOG_SUBJECT_LAST || level < LL_EMERG || level > LL_DEBUG || fmt == NULL) {
+		fprintf(stderr, "kmgr error klog: invalid subject=%d level=%d or format\n", subject, level);
+		return;
+	}
 	va_start(args, fmt);
 	if(subject_info[subject].active) {
 		vsnprintf(buf, sizeof(buf), fmt, args);

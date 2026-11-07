@@ -1,5 +1,55 @@
 # KMGR
 
+## Project diagnostics and tests
+
+The process starts a manager, serial I/O worker, socket server and log poller.
+The manager bootstraps the K60 firmware and optional Broadcom firmware, dispatches
+commands and monitors health. Calibration data is converted from Lua to IPF.
+
+Failure logs identify the operation and include return codes, file paths, sizes,
+device names or OS errors where applicable. Bootloader error returns include the
+function and source line. Broadcom status returns preserve the original enum
+value and log non-success results. Normal polling timeouts, lookup misses,
+checksum values, byte counts and successful low-level calls stay quiet.
+Completion logs are limited to useful initialization and conversion boundaries.
+
+| Area | Return-path handling and tests |
+| --- | --- |
+| Startup and configuration | Argument errors, thread creation, semaphore initialization, missing configuration and truncated values are logged. |
+| Sockets | Listener failures and descriptor cleanup; malformed/oversized requests, incomplete bodies, invalid responses and disconnects. |
+| Command management | Invalid clients, semaphore waits, help storage exhaustion and management response validation. |
+| Serial and framing | Initialization/read/write errors, subchannel bounds, checksum round trips and optional-checksum handling. |
+| K60 loader | Temporary files, conversion writes, image/header bounds, MCU-version responses and protocol error returns. |
+| Calibration | Missing files, malformed/oversized tokens, error propagation and output capacity. |
+| Broadcom | Typed status returns and relay adapter errors; arithmetic/endian utilities return data and are not error-logged. |
+| Logging | Invalid logger arguments are reported directly to stderr to avoid recursive logging. Lookup misses remain ordinary results. |
+| Deployment | Launch scripts use `exec`; package hooks stop on errors; systemd captures output in the journal and restarts services. |
+
+Run the complete hardware-independent regression suite:
+
+```sh
+make test
+```
+
+Individual targets are `test-loader`, `test-core`, `test-management`,
+`test-protocol`, `test-serial` and `test-brcm`. Serial tests use Linux
+pseudo-terminals; socket tests use loopback listeners and local socket pairs.
+MCU and relay responses are simulated. No attached hardware is needed.
+
+Run memory and undefined-behavior checks:
+
+```sh
+make test CFLAGS='-W -O1 -g -DFRAMER_ALLOW_HANDLERS=1 -DFIX_ENDIAN=0 -fsanitize=address,undefined -fno-omit-frame-pointer'
+```
+
+These tests cover representative success and failure paths, not every vendor
+opcode or fault-injection case. Real K60/Broadcom programming still requires
+hardware verification. SPI/MII hooks in the supplied adapter are placeholders.
+Concurrent servlet cancellation still uses shared connection state and needs a
+separate concurrency review. Serial/socket short writes are diagnosed but are
+not universally retried. The existing switch fallthrough and vendor signed-shift
+compiler warnings are outside this diagnostics change.
+
 ## Debian package for Raspberry Pi / Ubuntu 24.04
 
 Build natively on the Raspberry Pi running Ubuntu 24.04 (64-bit `arm64`

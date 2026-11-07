@@ -46,6 +46,7 @@
 #include "bcm85100_api.h"
 #include "hostCommLayer.h"
 #include "hostDriver.h"
+#include "diagnostics.h"
 
 //----------------------------------------------------
 //----------------------------------------------------
@@ -59,7 +60,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_Open(void)
 {
     if (bcm85100HostOpen() == TRUE)
     {
-        return (BCM85100_MEDIA_NOT_INITIALIZED_E);
+        return BCM85100_LOG_STATUS(BCM85100_MEDIA_NOT_INITIALIZED_E);
     }
     return (bcm85100HostCommOpen());
 }
@@ -74,12 +75,12 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_Close(void)
     retVal = bcm85100HostCommClose();
     if (retVal != BCM85100_SUCCESS_MSG_E)
     {
-        return (retVal);
+        return BCM85100_LOG_STATUS(retVal);
     }
     hostRetVal = bcm85100HostClose();
     if (hostRetVal == TRUE)
     {
-        return (BCM85100_MEDIA_NOT_INITIALIZED_E);
+        return BCM85100_LOG_STATUS(BCM85100_MEDIA_NOT_INITIALIZED_E);
     }
     return (BCM85100_SUCCESS_MSG_E);
 }
@@ -147,7 +148,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100FwSendAndJump(BYTE deviceIndex, BYTE *pBuffer)
              &rxStatus);
     if (retVal != BCM85100_SUCCESS_MSG_E)
     {
-        return (retVal);
+        return BCM85100_LOG_STATUS(retVal);
     }
 
     // skip the SW header and the boot fw
@@ -191,12 +192,12 @@ BCM85100_ERROR_MSG_ENUM bcm85100FwSendAndJump(BYTE deviceIndex, BYTE *pBuffer)
                  &rxStatus);
         if (retVal != BCM85100_SUCCESS_MSG_E)
         {
-            return (retVal);
+            return BCM85100_LOG_STATUS(retVal);
         }
 
         if (totalLen < 0)
         {
-            return (BCM85100_BOOT_DATA_TOO_BIG_E);
+            return BCM85100_LOG_STATUS(BCM85100_BOOT_DATA_TOO_BIG_E);
         }
 
         offset += sizeof(BCM85100_BOOT_DATA_RECORD_HEADER_STRUCT) + size;
@@ -214,7 +215,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100FwSendAndJump(BYTE deviceIndex, BYTE *pBuffer)
              &rxStatus);
     if (retVal != BCM85100_SUCCESS_MSG_E)
     {
-        return (retVal);
+        return BCM85100_LOG_STATUS(retVal);
     }
 
     // jump message
@@ -224,7 +225,7 @@ BCM85100_ERROR_MSG_ENUM bcm85100FwSendAndJump(BYTE deviceIndex, BYTE *pBuffer)
                                        BCM85100_COM_JUMP_TO_FW_MSG_OPCODE_E,
                                        0,
                                        BCM85100_SPI_BOOTFW);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -245,7 +246,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_FirmwareFromHostBoot(BYTE deviceIndex, BYTE
     // sanity check
     if (len < BCM85100_BOOT_FW_SIZE_BYTES)
     {
-        return (BCM85100_BOOT_DATA_TOO_SMALL_E);
+        return BCM85100_LOG_STATUS(BCM85100_BOOT_DATA_TOO_SMALL_E);
     }
 
 
@@ -261,7 +262,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_FirmwareFromHostBoot(BYTE deviceIndex, BYTE
     if (bcm85100ChecksumCalc(0, &pBuffer[4] + BCM85100_BOOT_FW_SIZE_BYTES, len - 4 - BCM85100_CHECKSUM_LEN, TRUE) != receivedChecksum) // exclude burn number and checksum fields.
     {
         bcm85100HostApiMutexRelease(deviceIndex);
-        return (BCM85100_BOOT_INVALID_CHECKSUM_E);
+        return BCM85100_LOG_STATUS(BCM85100_BOOT_INVALID_CHECKSUM_E);
     }
 
     do
@@ -317,7 +318,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_FirmwareFromHostBoot(BYTE deviceIndex, BYTE
 
     // end critical section
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 
@@ -382,7 +383,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ConfigFileFromHostLoad(BYTE       deviceInd
     if (retVal != BCM85100_SUCCESS_MSG_E)
     {
         bcm85100HostApiMutexRelease(deviceIndex);
-        return (retVal);
+        return BCM85100_LOG_STATUS(retVal);
     }
 
     retVal = bcm85100HostCommBuildSendAndReceive(deviceIndex,
@@ -397,7 +398,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ConfigFileFromHostLoad(BYTE       deviceInd
     if (retVal != BCM85100_SUCCESS_MSG_E)
     {
         bcm85100HostApiMutexRelease(deviceIndex);
-        return (retVal);
+        return BCM85100_LOG_STATUS(retVal);
     }
 
     while (sleepCycles > 0)
@@ -417,7 +418,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ConfigFileFromHostLoad(BYTE       deviceInd
         if (retVal != BCM85100_SUCCESS_MSG_E)
         {
             bcm85100HostApiMutexRelease(deviceIndex);
-            return (retVal);
+            return BCM85100_LOG_STATUS(retVal);
         }
 
         isFinished = ((BCM85100_CONFIG_FILE_STATUS_STRUCT*)&configStatus[0])->isFinished;
@@ -433,7 +434,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ConfigFileFromHostLoad(BYTE       deviceInd
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (BCM85100_ERROR_CFG_FILE_TIMEOUT_E);
+    return BCM85100_LOG_STATUS(BCM85100_ERROR_CFG_FILE_TIMEOUT_E);
 }
 
 
@@ -473,7 +474,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_VersionGet(BYTE deviceIndex, BCM85100_MODEM
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -504,7 +505,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_BootLoaderVersionGet(BYTE deviceIndex, BCM8
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -535,7 +536,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_AlarmEnableGet(BYTE deviceIndex, BYTE modem
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 
 }
 
@@ -559,7 +560,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_AlarmEnableSet(BYTE deviceIndex, BYTE modem
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 
 }
 
@@ -591,7 +592,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_AlarmStatusGet(BYTE deviceIndex, BYTE modem
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 
@@ -633,7 +634,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemStatusGet(BYTE deviceIndex, BYTE modem
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -665,7 +666,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_FrequentModemStatusGet(BYTE deviceIndex, BY
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -696,7 +697,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_RtcStatusGet(BYTE deviceIndex, BYTE modemIn
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -728,7 +729,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_EdStatusGet(BYTE deviceIndex, BYTE modemInd
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -760,7 +761,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_BerCountersGet(BYTE deviceIndex, BYTE modem
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -791,7 +792,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemRsHistGet(BYTE deviceIndex, BYTE modem
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -822,7 +823,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemFifoLevelsGet(BYTE deviceIndex, BYTE m
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 
@@ -851,7 +852,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemRxMatFilterStatusSet(BYTE deviceIndex,
 
     bcm85100HostApiMutexRelease(deviceIndex);
 
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 
 }
 
@@ -881,7 +882,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemTxMatFilterStatusSet(BYTE deviceIndex,
 
     bcm85100HostApiMutexRelease(deviceIndex);
 
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 
@@ -913,7 +914,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_AcmCountersGet(BYTE deviceIndex, BYTE modem
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 
 }
 
@@ -945,7 +946,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemAcquireCountersGet(BYTE deviceIndex, B
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -978,7 +979,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemIqImbalanceStatusGet(BYTE deviceIndex,
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1012,7 +1013,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemIqImbalanceTxTxSet(BYTE deviceIndex,
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1035,7 +1036,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_RxSkewSet(BYTE deviceIndex, BYTE modemIndex
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1058,7 +1059,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_TxSkewSet(BYTE deviceIndex, BYTE modemIndex
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1129,7 +1130,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemEqualizerStatusGet(BYTE               
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 
@@ -1164,7 +1165,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_RxPowerGet(BYTE deviceIndex, BYTE modemInde
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 
@@ -1196,7 +1197,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_AcmConfigurationGet(BYTE deviceIndex, BYTE 
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1229,7 +1230,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemAcmProfileMaskGet(BYTE   deviceIndex,
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 //----------------------------------------------------
@@ -1269,7 +1270,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_SgmiiStatusGet(BYTE deviceIndex, BYTE modem
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1302,7 +1303,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_GetRxPacketGfpCrcErrCnt(BYTE deviceIndex,
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1335,7 +1336,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_GetTxPacketGfpCrcErrCnt(BYTE deviceIndex,
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1359,7 +1360,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_SgmiiConfigure(BYTE deviceIndex, BYTE modem
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 //----------------------------------------------------
@@ -1379,7 +1380,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_DeviceReset(BYTE deviceIndex, BCM85100_DEVI
 
     if (resetType != BCM85100_DEVICE_RESET_ALL_E)
     {
-        return BCM85100_API_INVALID_PARAMS_E;
+        return BCM85100_LOG_STATUS(BCM85100_API_INVALID_PARAMS_E);
     }
 
     bcm85100HostApiMutexGet(deviceIndex);
@@ -1397,7 +1398,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_DeviceReset(BYTE deviceIndex, BCM85100_DEVI
 
     bcm85100HostApiMutexRelease(deviceIndex);
 
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 
@@ -1437,7 +1438,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemAcquireStart(BYTE                     
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1463,7 +1464,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ExtPwmOverwrite(BYTE                       
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1489,7 +1490,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ExtClockConfig(BYTE                        
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1513,7 +1514,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_SetPrbsMode(BYTE deviceIndex, BYTE modemInd
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1537,7 +1538,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_BerCountersClear(BYTE     deviceIndex,
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1562,7 +1563,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_BerMonitorEnable(BYTE deviceIndex, BYTE mod
 
     bcm85100HostApiMutexRelease(deviceIndex);
 
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1587,7 +1588,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemPredistortionCoefsSet(BYTE            
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1610,7 +1611,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemTxSignalGainSet(BYTE deviceIndex, BYTE
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1635,7 +1636,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_RxFreqOffsetSet(BYTE  deviceIndex,
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1660,7 +1661,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_TxFreqOffsetSet(BYTE  deviceIndex,
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 //----------------------------------------------------
@@ -1694,7 +1695,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemAcmEngineEnable(BYTE deviceIndex, BYTE
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1719,7 +1720,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemAcmProfileEnable(BYTE   deviceIndex,
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1750,7 +1751,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemAcmSwitch(BYTE                        
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1775,7 +1776,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemAcmImproveIfNeeded(BYTE   deviceIndex,
               &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1817,7 +1818,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemAcmThresholdSet(BYTE                  
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 
 }
 
@@ -1867,7 +1868,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemAcmThresholdGet(BYTE                  
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1890,7 +1891,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_MailboxMessageSend(BYTE deviceIndex, BYTE m
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1921,7 +1922,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_MailboxMessageReceive(BYTE deviceIndex, BYT
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1945,7 +1946,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_TxRxOperationStart(BYTE     deviceIndex,
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -1974,7 +1975,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_AuxDacSet(BYTE deviceIndex, BYTE modemIndex
 
     bcm85100HostApiMutexRelease(deviceIndex);
 
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 
@@ -2000,7 +2001,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_TransmitterModeSet(BYTE                    
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -2033,7 +2034,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_TransmitterModeGet(BYTE                    
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -2058,7 +2059,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_LoopbackSet(BYTE                   deviceIn
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -2091,7 +2092,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_LoopbackGet(BYTE                   deviceIn
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -2115,7 +2116,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_RxOfTxOverTheAirParamsSet(BYTE deviceIndex,
 
     bcm85100HostApiMutexRelease(deviceIndex);
 
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 
@@ -2150,7 +2151,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_RxOfTxOverTheAirParamsGet(BYTE deviceIndex,
 
     bcm85100HostApiMutexRelease(deviceIndex);
 
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 
@@ -2176,7 +2177,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_RtcModeSet(BYTE deviceIndex, BYTE modemInde
 
     bcm85100HostApiMutexRelease(deviceIndex);
 
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -2195,15 +2196,15 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemSamplesGet(BYTE deviceIndex, BYTE mode
 
     if (numIqPairs > BCM85100_MAX_NUMBER_OF_PAIRS)
     {
-        return (BCM85100_IQ_SAMPLES_GET_ERROR_E);
+        return BCM85100_LOG_STATUS(BCM85100_IQ_SAMPLES_GET_ERROR_E);
     }
     else if ((inputSel == BCM85100_DAC_OUT_E) && (numIqPairs > BCM85100_MAX_DAC_NUMBER_OF_PAIRS))
     {
-        return (BCM85100_IQ_SAMPLES_GET_ERROR_E);
+        return BCM85100_LOG_STATUS(BCM85100_IQ_SAMPLES_GET_ERROR_E);
     }
     else if ((inputSel == BCM85100_ED_OUT_E) && (numIqPairs > BCM85100_MAX_ED_NUMBER_OF_PAIRS))
     {
-        return (BCM85100_IQ_SAMPLES_GET_ERROR_E);
+        return BCM85100_LOG_STATUS(BCM85100_IQ_SAMPLES_GET_ERROR_E);
     }
 
     bcm85100HostApiMutexGet(deviceIndex);
@@ -2223,7 +2224,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemSamplesGet(BYTE deviceIndex, BYTE mode
     if (retVal != BCM85100_SUCCESS_MSG_E)
     {
         bcm85100HostApiMutexRelease(deviceIndex);
-        return (retVal);
+        return BCM85100_LOG_STATUS(retVal);
     }
 
     // start receiving data, assuming that by the time the msgs
@@ -2253,7 +2254,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemSamplesGet(BYTE deviceIndex, BYTE mode
         if (retVal != BCM85100_SUCCESS_MSG_E)
         {
             bcm85100HostApiMutexRelease(deviceIndex);
-            return (retVal);
+            return BCM85100_LOG_STATUS(retVal);
         }
 
         memcpy(pBuffer + bufferIndex, rxBuffer, iqSamplesGetParams * 2 * sizeof(INT16));
@@ -2270,7 +2271,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_ModemSamplesGet(BYTE deviceIndex, BYTE mode
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -2304,7 +2305,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_GeneralControlSet(BYTE            deviceInd
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -2325,7 +2326,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_RxSlicerInGet(BYTE deviceIndex, BYTE modemI
 
     if (numIqPairs > BCM85100_MAX_EQU_OUT_NUMBER_OF_PAIRS)
     {
-        return (BCM85100_IQ_SAMPLES_GET_ERROR_E);
+        return BCM85100_LOG_STATUS(BCM85100_IQ_SAMPLES_GET_ERROR_E);
     }
 
     bcm85100HostApiMutexGet(deviceIndex);
@@ -2344,7 +2345,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_RxSlicerInGet(BYTE deviceIndex, BYTE modemI
         if (retVal != BCM85100_SUCCESS_MSG_E)
         {
             bcm85100HostApiMutexRelease(deviceIndex);
-            return (retVal);
+            return BCM85100_LOG_STATUS(retVal);
         }
 
         // start receiving data, assuming that by the time the msgs
@@ -2377,7 +2378,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_RxSlicerInGet(BYTE deviceIndex, BYTE modemI
             if (retVal != BCM85100_SUCCESS_MSG_E)
             {
                 bcm85100HostApiMutexRelease(deviceIndex);
-                return (retVal);
+                return BCM85100_LOG_STATUS(retVal);
             }
 
             memcpy(pBuffer + bufferIndex, rxBuffer, iqSamplesGetParams * 2 * sizeof(INT16));
@@ -2401,7 +2402,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_RxSlicerInGet(BYTE deviceIndex, BYTE modemI
 
     if (nofCycles == BCM85100_EQU_OUT_RECORD_MAX_TRIES)
     {
-        return BCM85100_CAPTURE_ERROR_PREAMBLE_E;
+        return BCM85100_LOG_STATUS(BCM85100_CAPTURE_ERROR_PREAMBLE_E);
     }
 
     //Get Slicer Info
@@ -2423,7 +2424,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_RxSlicerInGet(BYTE deviceIndex, BYTE modemI
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2470,7 +2471,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_RegisterRead(BYTE                deviceInde
     }
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -2510,7 +2511,7 @@ BCM85100_ERROR_MSG_ENUM BCM85100_API_RegisterWrite(BYTE               deviceInde
              &rxStatus);
 
     bcm85100HostApiMutexRelease(deviceIndex);
-    return (retVal);
+    return BCM85100_LOG_STATUS(retVal);
 }
 
 

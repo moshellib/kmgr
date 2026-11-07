@@ -2,10 +2,43 @@
 CC = gcc
 CFLAGS = -W -O2 -g -DFRAMER_ALLOW_HANDLERS=1 -DFIX_ENDIAN=0
 KMDOBJS = obj/main.o obj/sock.o obj/framer.o obj/seeprom.o obj/log.o obj/cmnutil.o obj/kio.o obj/kmgr.o obj/wdr85100.o obj/entry.o obj/prog.o obj/s19.o obj/serial.o obj/seriallinux.o obj/bcm85100_api.o obj/endian.o obj/hostCommLayer.o obj/hostDriver.o obj/utils.o obj/cmnstruct_api.o 
+MANAGEMENT_TEST_SRCS = $(filter-out main.c kmgr.c,$(wildcard *.c loader/*.c brcm/*.c))
 
 all: kmgr
 
-.PHONY: all clean install deb
+.PHONY: all clean install deb test-loader test-core test-brcm test-protocol test-serial test-management test
+
+test: test-loader test-core test-brcm test-protocol test-serial test-management
+
+test-management:
+	mkdir -p obj
+	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -I. tests/management_test.c $(MANAGEMENT_TEST_SRCS) -Wl,--gc-sections -Wl,--wrap=kmgr_issue_command -lpthread -o obj/management_test
+	./obj/management_test
+
+test-serial:
+	mkdir -p obj
+	$(CC) $(CFLAGS) -I. tests/serial_test.c loader/serial.c loader/seriallinux.c -lutil -o obj/serial_test
+	./obj/serial_test
+
+test-protocol:
+	mkdir -p obj
+	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -I. tests/protocol_test.c loader/prog.c loader/s19.c -Wl,--gc-sections -o obj/protocol_test
+	./obj/protocol_test
+
+test-brcm:
+	mkdir -p obj
+	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -I. tests/brcm_test.c brcm/hostCommLayer.c brcm/hostDriver.c -Wl,--gc-sections -lpthread -o obj/brcm_test
+	./obj/brcm_test
+
+test-core:
+	mkdir -p obj
+	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -I. tests/core_test.c sock.c cmnutil.c framer.c kio.c seeprom.c -Wl,--gc-sections -lpthread -o obj/core_test
+	./obj/core_test
+
+test-loader:
+	mkdir -p obj
+	$(CC) $(CFLAGS) -I. tests/loader_entry_test.c loader/entry.c -o obj/loader_entry_test
+	./obj/loader_entry_test
 
 install: kmgr
 	install -D -m 0755 kmgr $(DESTDIR)/usr/bin/kmgr

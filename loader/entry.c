@@ -60,6 +60,7 @@
 #define CRC32POLY0 0x04c11db7 // IEEE CRC-32 polynomial (non reflected)
 #define CRC32POLY1 0x6BCC41E9 // 5^n for some n
 #define CRC32POLY2 0xFFFFFFFE // ((UINT32)-1)<<1
+#define IMAGE_MAX_SIZE (512*1024)
 
 unsigned int CRC32(UINT8 *byte_ptr, int n_bytes, unsigned int poly)
 {
@@ -95,14 +96,18 @@ static int convert_and_load_image(char *file, T_SIKLU_K60_HEADER *header)
 	output_fd = mkstemp(output_file);
 	if(output_fd < 0)
 	{
-		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to create temporary firmware file: %s", strerror(errno));
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to create temporary file for firmware '%s': %s", file, strerror(errno));
 		return -1;
 	}
-	close(output_fd);
-
-	if(SikluConvert(file, output_file, 0x4080, header) < 0)
+	if(close(output_fd) < 0)
+	{
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to close temporary firmware '%s': %s", output_file, strerror(errno));
 		result = -1;
-	else if(load_siklu_image(output_file) < 0)
+	}
+
+	if(result == 0 && SikluConvert(file, output_file, 0x4080, header) < 0)
+		result = -1;
+	if(result == 0 && load_siklu_image(output_file) < 0)
 		result = -2;
 
 	if(unlink(output_file) < 0)
@@ -118,6 +123,7 @@ int loader_entry(char *dev_name, char *speed, char *file, int force_burn)
 	T_SIKLU_K60_HEADER header;
 	T_SIKLU_K60_HEADER remote_header;
 	char dev_arg[256];
+	const char *action = "reused";
 
 	image_crc = 0;
 	memset(&image, 0, sizeof(image));
@@ -137,11 +143,18 @@ int loader_entry(char *dev_name, char *speed, char *file, int force_burn)
 
 	// open serial port (speed specified ?)
 	if(init_uart(dev_arg, speed) < 0)
+	{
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Serial initialization failed: device=%s baud=%s", dev_name, speed ? speed : "default");
 		return 1;
+	}
 
 	// read S19 file
 	int conversion_rc = convert_and_load_image(file, &header);
-	if(conversion_rc != 0) return conversion_rc;
+	if(conversion_rc != 0)
+	{
+		close_uart();
+		return conversion_rc;
+	}
 
 	int mcu_info_rc;
 
@@ -156,13 +169,18 @@ int loader_entry(char *dev_name, char *speed, char *file, int force_burn)
 	{
 		fprintf(stderr, "Can't read MCU info. Could be protocol error:   %d.\r\n", mcu_info_rc);
 		fprintf(stderr, "(Or forgot to set single wire mode?)\r\n");
-		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Can't read MCU info. Could be protocol error:   %d.\r\n", mcu_info_rc);
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to read MCU information: device=%s rc=%d", dev_name, mcu_info_rc);
+		close_uart();
 		return 5;
 	}
 	
 	// masquerade vector table
 	if(setup_vect_tbl(ident.int_vect_tbl , ident.bl_tbl) < 0)
+	{
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Vector-table setup failed: source=0x%X destination=0x%X", ident.int_vect_tbl, ident.bl_tbl);
+		close_uart();
 		return 6;
+	}
 
 	// check if code goes to valid memory only - issue warning only, but continue! (r30323)
 	check_image();
@@ -181,13 +199,22 @@ int loader_entry(char *dev_name, char *speed, char *file, int force_burn)
 		if(prg_mem() < 0)
 		{
 			fprintf(stderr, "Program memory failed.\r\n");
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Firmware programming failed: device=%s firmware=%s", dev_name, file);
+			close_uart();
 			return 8;
 		}
 		// exit program mode, start application
-		unhook();
+		if(unhook() != 0)
+		{
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to exit programming mode: device=%s", dev_name);
+			close_uart();
+			return 8;
+		}
+		action = "programmed";
 	}
 
 	close_uart();
+	klog(KLOG_SUBJECT_KMGR, LL_INFOR, "K60 firmware load completed: device=%s version=%s action=%s", dev_name, header.sw_version, action);
 	//getchar();
 	return 0;
 }
@@ -198,6 +225,7 @@ int orig_main(int argc, char *argv[ ])
 	int  __attribute__ ((unused)) short_trim = 0;
 	T_SIKLU_K60_HEADER header;
 	T_SIKLU_K60_HEADER remote_header;
+	const char *action = "reused";
 
 	image_crc = 0;
 	memset(&image, 0, sizeof(image));
@@ -253,7 +281,7 @@ int orig_main(int argc, char *argv[ ])
 			"        speed  ... speed in bps\r\n"
 			"        file   ... S19 file\r\n\r\n");
 
-		if ((argc == 2) && ((argv[1][0] == '?') || ((argv[1][1] == '?'))))
+		if ((argc == 2) && ((argv[1][0] == '?') || (argv[1][0] != 0 && argv[1][1] == '?')))
 		{
 			printf("Recognized S08/CFV1/Kinetis MCU families:\r\n\r\n");
 			printf("SDID\tproto\tfamily\r\n");
@@ -265,11 +293,13 @@ int orig_main(int argc, char *argv[ ])
 			} while(sdidprops[++i].sdid != SDID_UNDEF);
 
 			printf("\r\n");
+			return 0;
 		}
 
 		printf("See Freescale Application Note AN2295 and AN2295SW for updates.\r\n");
 
-		return 0;
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Invalid loader arguments: argc=%d; expected port [speed] firmware", argc);
+		return 1;
 	}
 
 	// Check the additional short trim option
@@ -286,11 +316,18 @@ int orig_main(int argc, char *argv[ ])
 
 	// open serial port (speed specified ?)
 	if(init_uart(argv[1], argc==4 ? argv[2] : NULL) < 0)
+	{
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Serial initialization failed: device=%s baud=%s", argv[1], argc == 4 ? argv[2] : "default");
 		return 1;
+	}
 
 	// read S19 file
 	int conversion_rc = convert_and_load_image(argv[argc-1], &header);
-	if(conversion_rc != 0) return conversion_rc;
+	if(conversion_rc != 0)
+	{
+		close_uart();
+		return conversion_rc;
+	}
 #if 0
 	if(read_s19(argv[argc-1], &image) < 0)
 		exit(2);
@@ -304,7 +341,8 @@ int orig_main(int argc, char *argv[ ])
 		exit(4);
 #endif
 	// read info
-	if(!read_mcu_info())
+	int mcu_info_rc = read_mcu_info();
+	if(mcu_info_rc == 0)
 	{
 #if 0
 		printf("\r\nBootloader protocol version: 0x%02X (%s, ", bl_version /*| (bl_rcs ? 0x80 : 0)*/, Version_string(bl_version));
@@ -406,18 +444,24 @@ int orig_main(int argc, char *argv[ ])
 	{
 		fprintf(stderr, "Can't read MCU info. Could be protocol error.\r\n");
 		fprintf(stderr, "(Or forgot to set single wire mode?)\r\n");
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to read MCU information: device=%s rc=%d", argv[1], mcu_info_rc);
+		close_uart();
 		return 5;
 	}
 	
 	// masquerade vector table
 	if(setup_vect_tbl(ident.int_vect_tbl , ident.bl_tbl) < 0)
+	{
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Vector-table setup failed: source=0x%X destination=0x%X", ident.int_vect_tbl, ident.bl_tbl);
+		close_uart();
 		return 6;
+	}
 
 	// check if code goes to valid memory only - issue warning only, but continue! (r30323)
 	check_image();
 
         if(SikluGetRemoteVersion((char *)&remote_header.sw_version, sizeof(remote_header.sw_version)) != 0) {
-		sprintf((char*)remote_header.sw_version, "unreadlable");
+		sprintf((char*)remote_header.sw_version, "unreadable");
 	}
 
 	printf("\r\n");
@@ -432,13 +476,22 @@ int orig_main(int argc, char *argv[ ])
 		if(prg_mem() < 0)
 		{
 			fprintf(stderr, "Program memory failed.\r\n");
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Firmware programming failed: device=%s firmware=%s", argv[1], argv[argc-1]);
+			close_uart();
 			return 8;
 		}
 		// exit program mode, start application
-		unhook();
+		if(unhook() != 0)
+		{
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to exit programming mode: device=%s", argv[1]);
+			close_uart();
+			return 8;
+		}
+		action = "programmed";
 	}
 
 	close_uart();
+	klog(KLOG_SUBJECT_KMGR, LL_INFOR, "K60 firmware load completed: device=%s version=%s action=%s", argv[1], header.sw_version, action);
 	getchar();
 	return 0;
 }
@@ -468,7 +521,7 @@ int SikluConvert(char * sFileName,char * outputFileName,UINT32 run_address, T_SI
 	// masquerade vector table
 	if(setup_vect_tbl(0x00004080 , 0x0) < 0)
 	{
-		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to prepare vector table for firmware '%s'", sFileName);
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to prepare vector table for firmware '%s': source=0x4080 destination=0x0", sFileName);
 		return -1;
 	}
 
@@ -478,6 +531,11 @@ int SikluConvert(char * sFileName,char * outputFileName,UINT32 run_address, T_SI
 	for(end_addr=MAX_ADDRESS; end_addr>start_addr; end_addr--)
 		if(image.f[end_addr-1]) break;
 	length = end_addr-start_addr;
+	if(length == 0 || start_addr < sizeof(header) || length > IMAGE_MAX_SIZE - sizeof(header) - 4)
+	{
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Invalid firmware range: file=%s start=0x%X bytes=%u", sFileName, start_addr, length);
+		return -1;
+	}
 	crc32[0] = CRC32(&image.d[start_addr], length, CRC32POLY0);
 	crc32[1] = CRC32(&image.d[start_addr], length, CRC32POLY1);
 	crc32[2] = CRC32(&image.d[start_addr], length, CRC32POLY2);
@@ -507,56 +565,122 @@ int SikluConvert(char * sFileName,char * outputFileName,UINT32 run_address, T_SI
 	SikluWriteData(file,&header,sizeof(header));
 	// write the image
 	SikluWriteData(file,&image.d[start_addr],length);
+	if(ferror(file))
+		goto write_failed;
 	// write the crc
 	//printf("CRC is 0x%x\r\n",image_crc);
 	image_crc = FE16(image_crc);
-	fwrite(&image_crc,1,sizeof(image_crc),file);
+	if(fwrite(&image_crc,1,sizeof(image_crc),file) != sizeof(image_crc))
+		goto write_failed;
 	image_crc = FE16(0); // make sure we are aligned to 4 bytes.
-	fwrite(&image_crc,1,sizeof(image_crc),file);
-	fclose(file);
+	if(fwrite(&image_crc,1,sizeof(image_crc),file) != sizeof(image_crc))
+		goto write_failed;
+	if(fclose(file) != 0)
+	{
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to finalize converted firmware '%s': %s", outputFileName, strerror(errno));
+		return -1;
+	}
 	//printf("Done\r\n");
+	klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "Firmware converted: input=%s output=%s address=0x%X bytes=%u", sFileName, outputFileName, start_addr - (UINT32)sizeof(header), length);
 	return 0;
+
+write_failed:
+	klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to write converted firmware '%s': %s", outputFileName, strerror(errno));
+	fclose(file);
+	return -1;
 }
 
-#define IMAGE_MAX_SIZE (512*1024)
 unsigned char siklu_prog_buffer[IMAGE_MAX_SIZE];
 
 int load_siklu_image(char * fileName)
 {
 	UINT32 size,address;
-	T_SIKLU_K60_HEADER * header;
+	T_SIKLU_K60_HEADER header;
+	int extra_byte;
 
 	FILE * file = fopen(fileName,"rb");
 	if (!file)
 	{
-		printf("Can't open input file '%s' for reading\r\n", fileName);
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to open converted firmware '%s' for reading: %s", fileName, strerror(errno));
 		return -1;
 	}
 	size = fread(siklu_prog_buffer,1,IMAGE_MAX_SIZE,file);
-	fclose(file);
+	extra_byte = fgetc(file);
+	if(ferror(file))
+	{
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to read converted firmware '%s': %s", fileName, strerror(errno));
+		fclose(file);
+		return -1;
+	}
+	if(fclose(file) != 0)
+	{
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to close converted firmware '%s': %s", fileName, strerror(errno));
+		return -1;
+	}
+	if(extra_byte != EOF || size < sizeof(header) + 4)
+	{
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Invalid converted firmware size: file=%s bytes=%u limit=%u", fileName, size, (unsigned int)IMAGE_MAX_SIZE);
+		return -1;
+	}
 
-	header = (T_SIKLU_K60_HEADER *)&siklu_prog_buffer;
+	memcpy(&header, siklu_prog_buffer, sizeof(header));
+	if(FE32(header.header_version) != 1 || FE32(header.data_length) == 0 || FE32(header.data_length) != size - sizeof(header) - 4)
+	{
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Invalid or truncated converted firmware: file=%s version=%u data_bytes=%u file_bytes=%u", fileName, FE32(header.header_version), FE32(header.data_length), size);
+		return -1;
+	}
 	
-	address = FE32(header->burn_address);
+	address = FE32(header.burn_address);
+	if(address >= MAX_ADDRESS || size > MAX_ADDRESS - address)
+	{
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Converted firmware exceeds image memory: file=%s address=0x%X bytes=%u", fileName, address, size);
+		return -1;
+	}
 	//fprintf(stderr, "Burn address = 0x%X\r\n",address);
 
 	memcpy(&image.d[address],siklu_prog_buffer,size);
 	memset(&image.f[address],1,size);
+	klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "Converted firmware loaded: file=%s address=0x%X bytes=%u", fileName, address, size);
 	return 0;
 }
 
 
 int SikluGetRemoteVersion(char *version, int vsize) {
-	char *p; 
-        wb("i", 1);
-	for(p = version; p < version + vsize; p++) {
-		rb(p, 1);
-		//fprintf(stderr, "got %d (%c)\r\n", *p, *p);
-		if(p[0] == 0x0d) p[0] = 0;
-		if(p[0] == 0x0a) {
-			p[0] = 0;
+	int position = 0;
+	int result;
+	char received;
+
+	if(version == NULL || vsize <= 0) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Invalid MCU version buffer: bytes=%d", vsize);
+		return 1;
+	}
+	version[0] = 0;
+	result = wb("i", 1);
+	if(result != 1) {
+		if(result < 0)
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to write MCU version request: %s", strerror(errno));
+		else
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Incomplete MCU version request: written=%d expected=1", result);
+		return 1;
+	}
+	while(position < vsize) {
+		result = rb(&received, 1);
+		if(result != 1) {
+			if(result < 0)
+				klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to read MCU version response: %s", strerror(errno));
+			else
+				klog(KLOG_SUBJECT_KMGR, LL_WARNG, "Timed out reading MCU version response: bytes=%d; treating version as unreadable", position);
+			return 1;
+		}
+		if(received == '\n') {
+			klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "MCU firmware version: %s", version);
 			return 0;
 		}
+		if(position == vsize - 1)
+			break;
+		version[position++] = received == '\r' ? 0 : received;
+		version[position] = 0;
 	}
+	klog(KLOG_SUBJECT_KMGR, LL_WARNG, "MCU version response exceeded buffer capacity=%d; treating version as unreadable", vsize);
 	return 1;
 }

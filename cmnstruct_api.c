@@ -37,10 +37,14 @@ int action(int client_id, struct_def_t *def, void *in, void *out, UINT32 out_max
 	UINT32 length;
 	kmgr_response_t *response;
 
+	if(def == NULL || (def->size_in && in == NULL) || (out_max_size && out == NULL)) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "action: invalid management buffers; client=%d", client_id);
+		return -1;
+	}
 	length = snprintf(buf, sizeof(buf), "mgmts %d %d\r\n", def->id, def->size_in);
 
 	if(length + def->size_in + 2 >= sizeof(buf)) {
-		klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "k60s mgmts body is too big...");
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "action: management request too large; id=%u bytes=%u limit=%u", def->id, def->size_in, (unsigned int)sizeof(buf));
 		return -1;
 	}
 	if(def->size_in) {
@@ -63,13 +67,21 @@ int action(int client_id, struct_def_t *def, void *in, void *out, UINT32 out_max
 		length += snprintf(&buf[length], sizeof(buf) - length, "\r\n");
 	}
 	response = kmgr_issue_command(client_id, buf, length);
+	if(response == NULL || response->status == NULL) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "action: no management response; id=%u client=%d", def->id, client_id);
+		return -2;
+	}
 	if(strcmp(response->status, "OK") != 0) {
-		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "k60s mgmts command failed... id=%d", def->id);
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "action: management command failed; id=%u status=%s", def->id, response->status);
 		return -2;
 	}
 #if FIX_ENDIAN
 	response->body_length = FE16(response->body_length);
 #endif
+	if(response->body_length > out_max_size || (response->body_length && response->body == NULL) || response->body_length < def->size_out) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "action: invalid management response body; id=%u received=%u expected=%u capacity=%u", def->id, response->body_length, def->size_out, out_max_size);
+		return -2;
+	}
 	length = response->body_length <= out_max_size ? response->body_length : out_max_size;
 	if(length) {
 #if FIX_ENDIAN

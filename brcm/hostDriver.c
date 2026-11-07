@@ -20,17 +20,27 @@
 #include "hostCommLayer.h"
 #include "hostDriver.h"
 #include "defs85100.h"
+#include "diagnostics.h"
 
 //pthread_mutex_t brcm_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 int hdrv_read(void *buff, int len) {
 	extern int relay_read(void *buff, int len);
-	return relay_read(buff, len);
+	int result;
+	if(len < 0 || (len && buff == NULL)) return KLOG_RETURN_ERROR(-1);
+	result = relay_read(buff, len);
+	if(result < 0) return KLOG_RETURN_ERROR(result);
+	return result;
 }
 
 int hdrv_write(void *buff, int len) {
 	extern int relay_write(void *buff, int len);
-	return relay_write(buff, len);
+	int result;
+	if(len < 0 || (len && buff == NULL)) return KLOG_RETURN_ERROR(-1);
+	result = relay_write(buff, len);
+	if(result < 0) return KLOG_RETURN_ERROR(result);
+	if(result != len) klog(KLOG_SUBJECT_KMGR, LL_WARNG, "hdrv_write: incomplete relay write; written=%d expected=%d", result, len);
+	return result;
 }
 
 /////////////////////////////////////////////////////////////////////////////////
@@ -107,7 +117,10 @@ void bcm85100HostSleep(UINT32 sleepTimeMicro)
 UINT32 bcm85100HostTickGet(void)
 {
 	struct timespec ts;
-	clock_gettime(CLOCK_REALTIME, &ts);
+	if(clock_gettime(CLOCK_REALTIME, &ts) < 0) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "bcm85100HostTickGet: clock read failed: %s", strerror(errno));
+		return 0;
+	}
 	return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
 }
 
@@ -153,10 +166,17 @@ void bcm85100HostApiMutexRelease(BYTE deviceIndex)
 /////////////////////////////////////////////////////////////////////////////////
 void bcm85100HostUartDataSend(BYTE deviceIndex, BYTE *pBuff, UINT32 buffLen)
 {
-	(void)deviceIndex;
+	if(buffLen && pBuff == NULL) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "bcm85100HostUartDataSend: missing buffer; device=%u bytes=%lu", deviceIndex, (unsigned long)buffLen);
+		return;
+	}
 	while(buffLen) {
 		UINT32 len = buffLen <= 100 ? buffLen : 100;
-		hdrv_write(pBuff, len);
+		int written = hdrv_write(pBuff, len);
+		if(written != (int)len) {
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "bcm85100HostUartDataSend: relay send failed; device=%u written=%d expected=%lu", deviceIndex, written, (unsigned long)len);
+			return;
+		}
 		buffLen -= len;
 		pBuff += len;
 		if(buffLen) {
@@ -179,9 +199,18 @@ void bcm85100HostUartDataReceive(BYTE deviceIndex, BYTE *pBuff, UINT32 buffLen, 
 {
 	(void)deviceIndex;
 	UINT32 t, total = 0;
+	if(pReadBytes) *pReadBytes = 0;
+	if(buffLen && pBuff == NULL) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "bcm85100HostUartDataReceive: missing buffer; device=%u bytes=%lu", deviceIndex, (unsigned long)buffLen);
+		return;
+	}
 	UINT32 start_time = bcm85100HostTickGet();
 	while((total < buffLen) && (bcm85100HostTickGet() - start_time <= (UINT32) timeoutMilli)) {
 		int r = hdrv_read(&pBuff[total], buffLen - total);
+		if(r < 0) {
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "bcm85100HostUartDataReceive: relay read failed; device=%u received=%lu", deviceIndex, (unsigned long)total);
+			break;
+		}
 		if(r > 0) {
 			t = r;
 			total += t;
@@ -209,7 +238,9 @@ void bcm85100HostUartReceiverFlush(BYTE deviceIndex)
 {
 	(void)deviceIndex;
 	char buf[256];
-	while(hdrv_read(&buf, sizeof(buf)) > 0);
+	int result;
+	while((result = hdrv_read(&buf, sizeof(buf))) > 0);
+	if(result < 0) klog(KLOG_SUBJECT_KMGR, LL_ERROR, "bcm85100HostUartReceiverFlush: relay flush failed; device=%u", deviceIndex);
 }
 
 

@@ -35,6 +35,8 @@
 
 #include "sysdep.h"
 #include "hc08sprg.h"
+#include "../gl_types.h"
+#include "../kdefs.h"
 
 //#pragma warning(disable : 4996)
 
@@ -100,9 +102,14 @@ int read_s19(char *fn, BOARD_MEM* pImage)
 
 	total = 0;
 
+	if(fn == NULL || pImage == NULL) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "read_s19: invalid file or image pointer");
+		return -1;
+	}
 	if((f = *fn ? fopen(fn, "r") : stdin) == NULL)
 	{
 		fprintf(stderr, "Can't open input file %s\r\n", fn);
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "read_s19: failed to open '%s': %s", fn, strerror(errno));
 		return -1;
 	}
 
@@ -156,13 +163,19 @@ int read_s19(char *fn, BOARD_MEM* pImage)
 		if(sscanf(pc, afmt, &len, &addr)!=2 || len >= 0x100)
 		{
 			fprintf(stderr, "S-record parse error at line %d\r\n", line);
-			return -1;
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "read_s19: malformed record; file=%s line=%d", fn, line);
+			goto read_failed;
 		}
 
 		if(addr >= MAX_ADDRESS)
 		{
 			fprintf(stderr, "Address out of range at line %d (0x%X >= 0x%X)\r\n", line, addr, MAX_ADDRESS);
-			return -1;
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "read_s19: address out of range; file=%s line=%d address=0x%X", fn, line, addr);
+			goto read_failed;
+		}
+		if(len < alen / 2 + 1 || len - alen / 2 - 1 > MAX_ADDRESS - addr || strlen(pc) < 2 + alen + 2 * (len - alen / 2)) {
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "read_s19: invalid record length; file=%s line=%d bytes=%u", fn, line, len);
+			goto read_failed;
 		}
 
 #if 1
@@ -195,7 +208,8 @@ int read_s19(char *fn, BOARD_MEM* pImage)
 			if(sscanf(pc, "%2x", &b) != 1 || b >= 0x100)
 			{
 				fprintf(stderr, "S-record data parse error at line %d\r\n", line);
-				return -1;
+				klog(KLOG_SUBJECT_KMGR, LL_ERROR, "read_s19: invalid data; file=%s line=%d byte=%u", fn, line, u);
+				goto read_failed;
 			}
 			pc += 2;
 
@@ -233,14 +247,20 @@ int read_s19(char *fn, BOARD_MEM* pImage)
 		if(sscanf(pc, "%2x", &b) != 1 || b >= 0x100 || ((sum+b)&0xff) != 0xff)
 		{
 			fprintf(stderr, "S-record checksum error at line %d\r\n", line);
-			return -1;
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "read_s19: checksum mismatch; file=%s line=%d", fn, line);
+			goto read_failed;
 		}
 	}
 
+	if(ferror(f)) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "read_s19: failed to read '%s': %s", fn, strerror(errno));
+		goto read_failed;
+	}
 	if (total == 0)
 	{
 		fprintf(stderr, "S-record contains no valid data!\r\n");
-		return -1;
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "read_s19: file '%s' contains no valid data", fn);
+		goto read_failed;
 	}
 	else
 	{
@@ -254,8 +274,16 @@ int read_s19(char *fn, BOARD_MEM* pImage)
 			printf("Source address range: 0x%04X-0x%04X\r\n\r\n", addr_lo, addr_hi);
 #endif
 	}
-	fclose(f);
+	if(f != stdin && fclose(f) != 0) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "read_s19: failed to close '%s': %s", fn, strerror(errno));
+		return -1;
+	}
+	klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "read_s19: loaded file=%s lines=%d bytes=%d", fn, line, total);
 	return 0;
+
+read_failed:
+	if(f != stdin) fclose(f);
+	return -1;
 }
 
 int write_s19(char *fn, BOARD_MEM* pImage)
@@ -263,6 +291,10 @@ int write_s19(char *fn, BOARD_MEM* pImage)
 	FILE *f;
 	char tmp[10];
 	unsigned u, sum, len, addr, a2, line, total, addr_lo, addr_hi;
+	if(fn == NULL || pImage == NULL) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "write_s19: invalid file or image pointer");
+		return -1;
+	}
 
 	// maximal record length
 	if(!m_maxlen) 
@@ -271,6 +303,7 @@ int write_s19(char *fn, BOARD_MEM* pImage)
 	if((f = *fn ? fopen(fn, "w") : stdout) == NULL)
 	{
 		fprintf(stderr, "Can't open output file %s\r\n", fn);
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "write_s19: failed to open '%s': %s", fn, strerror(errno));
 		return -1;
 	}
 
@@ -329,15 +362,19 @@ int write_s19(char *fn, BOARD_MEM* pImage)
 		strcat(buf, tmp);
 
 		// put line
-		fputs(buf, f);
+		if(fputs(buf, f) == EOF) goto write_failed;
 	}
 
-	fputs("S70500000000FA\n", f);
-	fclose(f);
+	if(fputs("S70500000000FA\n", f) == EOF) goto write_failed;
+	if(f == stdout ? fflush(f) != 0 : fclose(f) != 0) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "write_s19: failed to finalize '%s': %s", fn, strerror(errno));
+		return -1;
+	}
 
 	if (total == 0)
 	{
 		fprintf(stderr, "Image contains no valid data!\r\n");
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "write_s19: image contains no valid data; file=%s", fn);
 		return -1;
 	}
 	else
@@ -351,5 +388,10 @@ int write_s19(char *fn, BOARD_MEM* pImage)
 	}
 
 	return 0;
+
+write_failed:
+	klog(KLOG_SUBJECT_KMGR, LL_ERROR, "write_s19: failed to write '%s': %s", fn, strerror(errno));
+	if(f != stdout) fclose(f);
+	return -1;
 }
 

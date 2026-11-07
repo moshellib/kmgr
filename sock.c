@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <malloc.h>
 #include <string.h>
+#include <errno.h>
 #include <sys/socket.h>
 #include <resolv.h>
 
@@ -27,91 +28,126 @@ int open_listener(int port, int *fd)
 {   int sd;
     struct sockaddr_in addr;
 
+	if(fd == NULL || port < 0 || port > 65535) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Invalid listener arguments: port=%d output=%s", port, fd ? "provided" : "NULL");
+		return -1;
+	}
+	*fd = -1;
     sd = socket(PF_INET, SOCK_STREAM, 0);
+	if(sd < 0) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to create listener socket: port=%d error=%s", port, strerror(errno));
+		return -1;
+	}
     bzero(&addr, sizeof(addr));
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = INADDR_ANY;
     if (bind(sd, (struct sockaddr*)&addr, sizeof(addr)) != 0 )
     {
-    	klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "can't bind port");
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to bind listener: port=%d error=%s", port, strerror(errno));
+		close(sd);
         return -1;
     }
     if(listen(sd, 10) != 0 )
     {
-    	klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "Can't configure listening port");
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "Failed to listen: port=%d error=%s", port, strerror(errno));
+		close(sd);
         return -2;
     }
-    if(fd) *fd = sd;
+	*fd = sd;
     return 0;
 }
 
 int socket_clean_me = -1;
 
 void *servlet_entry(void *arg) {
-    char buf[REQ_LINE_MAX_SIZE + 2 + REQ_BODY_MAX_SIZE + 2 + 1], rsp_stline[RSP_STATUS_MAX_SIZE + 16];
-    int bytes, tmp;
-    UINT32 body_length;
-    servlet_arg_t servlet_arg;
-    kmgr_response_t *response;
-
-	pthread_t me = pthread_self();
-	klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "servlet: me is 0x%llX", (unsigned long long)me);
-    pthread_detach(me);
+	char buf[REQ_LINE_MAX_SIZE + 2 + REQ_BODY_MAX_SIZE + 2 + 1];
+	char rsp_stline[RSP_STATUS_MAX_SIZE + 16];
+	int bytes, tmp, rv;
+	UINT32 body_length;
+	servlet_arg_t servlet_arg;
+	kmgr_response_t *response;
 
 	memcpy(&servlet_arg, arg, sizeof(servlet_arg));
+	free(arg);
 	socket_clean_me = servlet_arg.client;
-    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
-
+	pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
 	while(1) {
-    	char c;
-    	int rv;
-        body_length = bytes = 0;
-    	while((rv = read(servlet_arg.client, &c, 1)) == 1) {
-    		buf[bytes++] = c;
-    		if(c == '\n') break;
-    	}
+		char received;
+		body_length = bytes = 0;
+		while((rv = read(servlet_arg.client, &received, 1)) == 1) {
+			if(bytes >= REQ_LINE_MAX_SIZE + 2) {
+				klog(KLOG_SUBJECT_KMGR, LL_WARNG, "servlet_entry: request line exceeds limit=%u", (unsigned int)REQ_LINE_MAX_SIZE + 2);
+				goto servlet_done;
+			}
+			buf[bytes++] = received;
+			if(received == '\n') break;
+		}
 		buf[bytes] = 0;
-    	if(rv != 1) break; // some connection problem
-		if((bytes > 5) && (memcmp(&buf[bytes - 5], "+++\r\n", 5) == 0)) {
+		if(rv != 1) {
+			klog(KLOG_SUBJECT_KMGR, rv == 0 ? LL_DEBUG : LL_ERROR, "servlet_entry: client read ended; fd=%d rc=%d reason=%s", servlet_arg.client, rv, rv == 0 ? "peer disconnected" : strerror(errno));
+			break;
+		}
+		if(bytes > 5 && memcmp(&buf[bytes - 5], "+++\r\n", 5) == 0) {
 			UINT32 back;
+			char *body_end, *body_start;
+			unsigned long requested_body;
 			buf[bytes - 5] = '\r';
 			buf[bytes - 4] = '\n';
 			bytes -= 3;
-			// body is only of flavor " %d+++\r\n"
-			for(back = 3; ((int)back < bytes) && (buf[bytes - back] != ' '); back ++); // find offset to last token;
-			body_length = atoi(buf + bytes - back + 1);
+			for(back = 3; (int)back < bytes && buf[bytes - back] != ' '; back++);
+			body_start = buf + bytes - back + 1;
+			errno = 0;
+			requested_body = strtoul(body_start, &body_end, 10);
+			if(body_start[0] == '-' || body_end == body_start || body_end != buf + bytes - 2 || errno != 0 || requested_body > REQ_BODY_MAX_SIZE) {
+				klog(KLOG_SUBJECT_KMGR, LL_WARNG, "servlet_entry: invalid request body length; maximum=%u", (unsigned int)REQ_BODY_MAX_SIZE);
+				goto servlet_done;
+			}
+			body_length = requested_body;
 			tmp = 0;
-	    	while((rv = read(servlet_arg.client, &c, 1)) == 1) {
-	    		buf[bytes + tmp++] = c;
-	    		if((UINT32)tmp == body_length + 2) break;
-	    	}
-	    	if(rv != 1) break; // some connection problem
-	    	bytes += tmp;
+			while((rv = read(servlet_arg.client, &received, 1)) == 1) {
+				buf[bytes + tmp++] = received;
+				if((UINT32)tmp == body_length + 2) break;
+			}
+			if(rv != 1) {
+				klog(KLOG_SUBJECT_KMGR, LL_ERROR, "servlet_entry: incomplete request body; received=%d expected=%u reason=%s", tmp, body_length + 2, rv == 0 ? "peer disconnected" : strerror(errno));
+				break;
+			}
+			bytes += tmp;
 		}
 		buf[bytes] = 0;
-
 		response = kmgr_issue_command(KMGR_CLIENT_SOCK, buf, bytes);
-
+		if(response == NULL || response->status == NULL || (response->body_length && response->body == NULL)) {
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "servlet_entry: invalid command response");
+			break;
+		}
 		tmp = snprintf(rsp_stline, sizeof(rsp_stline), "%s %d\r\n", response->status, response->body_length);
-		if(write(servlet_arg.client, rsp_stline, tmp) != tmp) {
+		if(tmp < 0 || (unsigned int)tmp >= sizeof(rsp_stline)) {
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "servlet_entry: response status exceeds buffer capacity");
+			break;
+		}
+		rv = write(servlet_arg.client, rsp_stline, tmp);
+		if(rv != tmp) {
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "servlet_entry: incomplete status write; written=%d expected=%d reason=%s", rv, tmp, rv < 0 ? strerror(errno) : "short write");
 			break;
 		}
 		if(response->body_length) {
-			if(write(servlet_arg.client, response->body, response->body_length) != response->body_length) {
+			rv = write(servlet_arg.client, response->body, response->body_length);
+			if(rv != response->body_length) {
+				klog(KLOG_SUBJECT_KMGR, LL_ERROR, "servlet_entry: incomplete body write; written=%d expected=%u reason=%s", rv, response->body_length, rv < 0 ? strerror(errno) : "short write");
 				break;
 			}
 			if(write(servlet_arg.client, "\r\n", 2) != 2) {
+				klog(KLOG_SUBJECT_KMGR, LL_ERROR, "servlet_entry: failed to write response trailer");
 				break;
 			}
 		}
 	}
+servlet_done:
 	servlet_valid = 0;
-	if(socket_clean_me != -1) {
-		close(socket_clean_me);
-		socket_clean_me = -1;
-	}
-    pthread_exit(0);
+	close(servlet_arg.client);
+	if(socket_clean_me == servlet_arg.client) socket_clean_me = -1;
+	klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "servlet_entry: connection closed; fd=%d", servlet_arg.client);
     return NULL;
 }
 
@@ -133,7 +169,7 @@ void *server_main(void *arg)
     while (1) {
     	struct sockaddr_in addr;
         int len = sizeof(addr);
-        servlet_arg_t servlet_arg;
+		servlet_arg_t *servlet_arg;
         int client;
 
         snprintf(fcond, sizeof(fcond), "%s/sock", env_kfs);
@@ -150,7 +186,13 @@ void *server_main(void *arg)
             	client = accept(listener, (struct sockaddr*)&addr, (socklen_t *)&len);		/* accept connection as usual */
         		if(client >= 0) {
         	        klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "server accepted connection: %s:%d", inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
-        	        servlet_arg.client = client;
+					servlet_arg = malloc(sizeof(*servlet_arg));
+					if(servlet_arg == NULL) {
+						klog(KLOG_SUBJECT_KMGR, LL_ERROR, "server_main: failed to allocate servlet argument");
+						close(client);
+						continue;
+					}
+					servlet_arg->client = client;
         	        if(servlet_valid) {
         	        	if(pthread_cancel(servlet) != 0) {
         	        		klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "server: failed to cancel existing servlet");
@@ -163,8 +205,12 @@ void *server_main(void *arg)
         	    	pthread_attr_init(&servlet_thread_attributes);
         	    	pthread_attr_setdetachstate(&servlet_thread_attributes, PTHREAD_CREATE_DETACHED);
         	    	pthread_attr_setinheritsched(&servlet_thread_attributes, PTHREAD_EXPLICIT_SCHED);
-        	        if(pthread_create(&servlet, &servlet_thread_attributes, &servlet_entry, (void *)&servlet_arg) != 0) {
-        	        	close(client); // failed to create servelet, we close client socket
+					int create_result = pthread_create(&servlet, &servlet_thread_attributes, servlet_entry, servlet_arg);
+					pthread_attr_destroy(&servlet_thread_attributes);
+					if(create_result != 0) {
+						klog(KLOG_SUBJECT_KMGR, LL_ERROR, "server_main: failed to create servlet: %s", strerror(create_result));
+						free(servlet_arg);
+						close(client);
         	        } else {
             	        servlet_valid = 1;
         	        }

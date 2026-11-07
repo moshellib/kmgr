@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
+#include <stddef.h>
 #include "gl_types.h"
 #include "seeprom.h"
 
@@ -513,6 +515,10 @@ int lua2ipf(lua2ipf_parser_t *psr, char *inbuf, int inlen) {
 	unsigned int token_len = 0;
 	char token[1024];
 	int pos = 0;
+	if(psr == NULL || inlen < 0 || (inlen && inbuf == NULL)) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "lua2ipf: invalid input length=%d", inlen);
+		return -1;
+	}
 	do {
 		c = nc;
 		nc = pos >= inlen ? EOF : inbuf[pos++];
@@ -527,6 +533,7 @@ int lua2ipf(lua2ipf_parser_t *psr, char *inbuf, int inlen) {
 				case '\r':
 				case '\n':
 				case EOF:
+					klog(KLOG_SUBJECT_KMGR, LL_ERROR, "lua2ipf: unterminated string near input byte=%d", pos);
 					return -3; // unexpected termination of line of file (in middle of string)
 				case '\"':
 					token_str = 0;
@@ -538,6 +545,7 @@ int lua2ipf(lua2ipf_parser_t *psr, char *inbuf, int inlen) {
 					if(token_len < sizeof(token) - 2) {
 						token[token_len++] = c;
 					} else {
+						klog(KLOG_SUBJECT_KMGR, LL_ERROR, "lua2ipf: string token exceeds limit=%u near byte=%d", (unsigned int)sizeof(token) - 2, pos);
 						return -2; // token too long...
 					}
 				}
@@ -578,6 +586,7 @@ int lua2ipf(lua2ipf_parser_t *psr, char *inbuf, int inlen) {
 					if(token_len < sizeof(token) - 2) {
 						token[token_len++] = c;
 					} else {
+						klog(KLOG_SUBJECT_KMGR, LL_ERROR, "lua2ipf: token exceeds limit=%u near byte=%d", (unsigned int)sizeof(token) - 2, pos);
 						return -2; // token too long...
 					}
 				}
@@ -592,12 +601,21 @@ int luafile2ipf(lua2ipf_parser_t *psr, char *fname) {
 	char filebuf[16384 + 1];
 	FILE *fd;
 	if((fd = fopen(fname, "rb")) == NULL) {
-		klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "failed to open %s", fname);
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "luafile2ipf: failed to open '%s': %s", fname, strerror(errno));
 		rv = -1;
 	} else {
 		len = fread(filebuf, 1, sizeof(filebuf), fd);
-		fclose(fd);
+		if(ferror(fd)) {
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "luafile2ipf: failed to read '%s': %s", fname, strerror(errno));
+			fclose(fd);
+			return -1;
+		}
+		if(fclose(fd) != 0) {
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "luafile2ipf: failed to close '%s': %s", fname, strerror(errno));
+			return -1;
+		}
 		if(len == sizeof(filebuf)) {
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "luafile2ipf: file '%s' exceeds limit=%u", fname, (unsigned int)sizeof(filebuf) - 1);
 			rv = -1;
 		} else {
 			rv = lua2ipf(psr, filebuf, len);
@@ -684,18 +702,23 @@ void ipf_dump_element(char *ipf, UINT16 tree, char *key, char utype) {
 
 static UINT32 make_ipf(lua2ipf_parser_t *parser, char *ipf, UINT32 max_size)
 {
-	char *pos = &ipf[0];
-	ipf_header_t *hdr = (ipf_header_t*) pos;
+	char *pos;
+	ipf_header_t header = {0};
+	ipf_header_t *hdr = &header;
 	int i, total;
-	hdr->header_size__le16 = FE16((UINT16)(UINT64)&((ipf_header_t*)NULL)->root_offset__le16[parser->roots_pos]);
+	hdr->header_size__le16 = FE16(offsetof(ipf_header_t, root_offset__le16) + parser->roots_pos * sizeof(hdr->root_offset__le16[0]));
 	hdr->nodes_segment_size__le16 = FE16(parser->nodes_pos);
 	hdr->rstrs_segment_size__le16 = FE16(parser->rstrs_pos);
 	hdr->pstrs_segment_size__le16 = FE16((parser->pstrs_pos + 1) / 2);
 	total = FE16(hdr->header_size__le16) + FE16(hdr->nodes_segment_size__le16) + FE16(hdr->rstrs_segment_size__le16) +
 			FE16(hdr->pstrs_segment_size__le16);
-	if((UINT32)total > max_size) {
-		klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "error - total IPF is too big");
+	if(ipf == NULL || (UINT32)total > max_size) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "make_ipf: output buffer insufficient; required=%d available=%u", total, max_size);
+		return 0;
 	} else {
+		pos = ipf;
+		memcpy(pos, hdr, offsetof(ipf_header_t, root_offset__le16));
+		hdr = (ipf_header_t *)pos;
 		for(i = 0; i < parser->roots_pos; i++) {
 			hdr->root_offset__le16[i] = FE16(parser->roots_offset[i]);
 		}
@@ -716,10 +739,10 @@ UINT32 make_ipf_by_files(char *fname0, char *fname1, char *ipf, UINT32 max_size)
 	UINT32 bytes;
 	parser_init(&parser);
 	if(fname0) {
-		luafile2ipf(&parser, fname0);
+		if(luafile2ipf(&parser, fname0) < 0) return 0;
 	}
 	if(fname1) {
-		luafile2ipf(&parser, fname1);
+		if(luafile2ipf(&parser, fname1) < 0) return 0;
 	}
 	bytes = make_ipf(&parser, ipf, max_size);
 	// now we have an ipf ready, we can dump and query it and so on
@@ -734,9 +757,10 @@ UINT32 make_ipf_by_buff(char *in, int inlen, char *ipf, UINT32 max_size)
 	lua2ipf_parser_t parser;
 	UINT32 bytes;
 	parser_init(&parser);
-	lua2ipf(&parser, in, inlen);
+	if(lua2ipf(&parser, in, inlen) < 0) return 0;
 	bytes = make_ipf(&parser, ipf, max_size);
-	ipf_dump(ipf);
+	if(bytes)
+		klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "make_ipf_by_buff: converted input=%d bytes to IPF=%u bytes", inlen, bytes);
 	return bytes;
 }
 

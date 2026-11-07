@@ -10,6 +10,11 @@ int make_args(char *buf, UINT32 length, UINT32 max_argc, UINT32 *argc, char**arg
 	UINT32 n_tokens = 0;
 	UINT32 token = 0;
 
+	if(buf == NULL || argc == NULL || argv == NULL || length == (UINT32)-1) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "make_args: invalid buffers or length=%u", length);
+		return -1;
+	}
+	*argc = 0;
 	length += 1; // we need the terminating 0 to parse args
 	for(i=0; i<length; i++) {
 	    if((buf[i] != ' ') && (buf[i] != '\t')) break;
@@ -30,6 +35,7 @@ int make_args(char *buf, UINT32 length, UINT32 max_argc, UINT32 *argc, char**arg
 		default:
 			if(token == 0) { // start of token
 				if(n_tokens >= max_argc) {
+					klog(KLOG_SUBJECT_KMGR, LL_WARNG, "make_args: too many arguments; maximum=%u", max_argc);
 					return -1;
 				}
 				argv[n_tokens] = &buf[i];

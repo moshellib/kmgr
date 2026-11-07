@@ -41,6 +41,8 @@ int wdr85100_com_init()
 			}
 		}
 	}
+    if(retVal == BCM85100_SUCCESS_MSG_E)
+        klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "wdr85100_com_init: communication initialized");
 	return retVal;
 }
 
@@ -83,6 +85,8 @@ int wdr85100_config(unsigned char* binFileBuf, int binFileLen)
 		}
 #endif
 	}
+    if(retVal != BCM85100_SUCCESS_MSG_E)
+        klog(KLOG_SUBJECT_KMGR, LL_ERROR, "wdr85100_config: all attempts failed; rc=%d config_bytes=%d", retVal, binFileLen);
 	return retVal;
 }
 
@@ -154,6 +158,8 @@ int wdr85100_load_config(BYTE* binFileBuf, int binFileLen, BYTE* mcFwBuf, int mc
 	/******* Closing *******/
 
 FINISH:
+	klog(KLOG_SUBJECT_KMGR, retVal == BCM85100_SUCCESS_MSG_E ? LL_DEBUG : LL_ERROR,
+		 "wdr85100_load_config: completed rc=%d firmware_bytes=%d config_bytes=%d", retVal, mcFwLen, binFileLen);
 
 #if 0 // we do not want to close as we may have to reconfigure
 	// calls to the BCM85100 host close function

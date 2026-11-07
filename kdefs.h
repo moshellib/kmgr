@@ -2,6 +2,7 @@
 #define _KDEFS_H
 
 #include "rfctl_cmn.h"
+#include <errno.h>
 
 extern char env_baud[];
 extern char env_forcesock[];
@@ -87,6 +88,16 @@ extern void *server_main(void *arg);
 
 
 extern void klog(int subject, int level, char *fmt, ...);
+
+static inline int klog_return_error(int result, const char *function, int line)
+{
+	int saved_errno = errno;
+	klog(KLOG_SUBJECT_KMGR, LL_ERROR, "%s: returning error rc=%d source_line=%d", function, result, line);
+	errno = saved_errno;
+	return result;
+}
+
+#define KLOG_RETURN_ERROR(result) klog_return_error((result), __func__, __LINE__)
 
 extern char *klog_subj_to_name(int subj);
 extern int klog_name_to_subj(char *name);

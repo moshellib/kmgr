@@ -65,9 +65,14 @@ struct {
 } help_db;
 
 static INT32 add_to_help_db(char *item, char **ptr) {
+    if(item == NULL || help_db.pos >= sizeof(help_db.buff)) {
+        klog(KLOG_SUBJECT_KMGR, LL_ERROR, "add_to_help_db: invalid item or help database exhausted; used=%u", help_db.pos);
+        return -1;
+    }
     UINT32 avail = sizeof(help_db.buff) - help_db.pos;
     UINT32 len = snprintf(&help_db.buff[help_db.pos], avail, "%s", item);
     if(len + 1 > avail) {
+        klog(KLOG_SUBJECT_KMGR, LL_ERROR, "add_to_help_db: help text exceeds storage; required=%u available=%u", len + 1, avail);
         return -1;
     }
     if(ptr) *ptr = &help_db.buff[help_db.pos];
@@ -108,7 +113,12 @@ static UINT32 issue_command(char *buff, int length, kmgr_response_t *response);
 int wait_sem_seconds(sem_t *sem, int seconds) {
     struct timespec ts;
     int s;
+    if(sem == NULL || seconds < 0) {
+        klog(KLOG_SUBJECT_KMGR, LL_ERROR, "wait_sem_seconds: invalid semaphore or timeout=%d", seconds);
+        return -2;
+    }
     if (clock_gettime(CLOCK_REALTIME, &ts) == -1) {
+        klog(KLOG_SUBJECT_KMGR, LL_ERROR, "wait_sem_seconds: failed to read clock: %s", strerror(errno));
         return -1;
     }
     ts.tv_sec += seconds;
@@ -116,7 +126,9 @@ int wait_sem_seconds(sem_t *sem, int seconds) {
         continue;       /* Restart if interrupted by handler */
     }
     if(s == -1) {
-        return errno == ETIMEDOUT ? 1 : -2;
+        if(errno == ETIMEDOUT) return 1;
+        klog(KLOG_SUBJECT_KMGR, LL_ERROR, "wait_sem_seconds: wait failed: %s", strerror(errno));
+        return -2;
     }
     return 0;
 }
@@ -375,29 +387,33 @@ static INT32 populate_k60s_help() {
     klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "learning help from k60s");
     issue_k60s_text_command("info\r\n", &response);
     if(strcmp(response.status, "OK") != 0) {
-        klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "no info found...");
+        klog(KLOG_SUBJECT_KMGR, LL_WARNG, "populate_k60s_help: MCU info unavailable; status=%s", response.status);
         return -1;
     }
     for(current = start = response.body; *current; current++) {
         if(*current == '\r') {
             char buff[128];
+            if(help_db.k60s_cmds_base + help_db.n_k60s_cmds >= MAX_CMDS) {
+                klog(KLOG_SUBJECT_KMGR, LL_ERROR, "populate_k60s_help: command table exhausted; maximum=%u", (unsigned int)MAX_CMDS);
+                return -2;
+            }
             cmd_help_t *cmd = &help_db.cmds[help_db.k60s_cmds_base + help_db.n_k60s_cmds];
             *current = 0;
             if(add_to_help_db(start, &cmd->name) < 0) return -2; // add command
 
             snprintf(buff, sizeof(buff), "info %s 1\r\n", start);
             issue_k60s_text_command(buff, &response2);
-            if(strcmp(response2.status, "OK") != 0) return -2; // should not happen...
+            if(strcmp(response2.status, "OK") != 0) { klog(KLOG_SUBJECT_KMGR, LL_ERROR, "populate_k60s_help: parameter query failed; command=%s status=%s", start, response2.status); return -2; }
             if(add_to_help_db(response2.body, &cmd->param_list) < 0) return -2;
 
             snprintf(buff, sizeof(buff), "info %s 2\r\n", start);
             issue_k60s_text_command(buff, &response2);
-            if(strcmp(response2.status, "OK") != 0) return -2; // should not happen...
+            if(strcmp(response2.status, "OK") != 0) { klog(KLOG_SUBJECT_KMGR, LL_ERROR, "populate_k60s_help: description query failed; command=%s status=%s", start, response2.status); return -2; }
             if(add_to_help_db(response2.body, &cmd->description) < 0) return -2;
 
             snprintf(buff, sizeof(buff), "info %s 3\r\n", start);
             issue_k60s_text_command(buff, &response2);
-            if(strcmp(response2.status, "OK") != 0) return -2; // should not happen...
+            if(strcmp(response2.status, "OK") != 0) { klog(KLOG_SUBJECT_KMGR, LL_ERROR, "populate_k60s_help: help query failed; command=%s status=%s", start, response2.status); return -2; }
             if(add_to_help_db(response2.body, &cmd->parameters) < 0) return -2;
 
             ++help_db.n_k60s_cmds;
@@ -491,7 +507,7 @@ int lcmd_f_brcmcfg(int argc, char **argv, UINT32 body_length, char *body, kmgr_r
 
         snprintf(fname, sizeof(fname), "%s/%s", env_kfs, argv[1]);
         if((fd = fopen(fname, "rb")) == NULL) {
-            klog(KLOG_SUBJECT_KMGR, LL_ERROR, "can not open bin file");
+            klog(KLOG_SUBJECT_KMGR, LL_ERROR, "lcmd_f_brcmcfg: cannot open configuration '%s': %s", fname, strerror(errno));
             response->status_length = sprintf(response->status, "BADARGS");
         } else {
         	strcpy(env_healthchk, "0");
@@ -910,6 +926,7 @@ static int issue_local_command(char *buff, int length, kmgr_response_t *response
             for(i=0; (i<sizeof(lcmds)/sizeof(lcmds[0])) && (found == 0); i++) {
                 if(strcmp((char*)argv[0], lcmds[i].name) == 0) {
                     if(lcmds[i].lcmd_f_cb(argc, (char**)argv, body_length, body, response, NULL) < 0) {
+                        klog(KLOG_SUBJECT_KMGR, LL_WARNG, "issue_local_command: invalid arguments; command=%s argc=%u", lcmds[i].name, argc);
                         response->status_length = sprintf(response->status, "BADARGS");
                         response->body_length = 0;
                     }
@@ -972,14 +989,14 @@ static int load_k60b(void) {
     int fwLen, binLen, rv = 0;
     snprintf(fname, sizeof(fname), "%s/%s", env_kfs, env_brcmfw);
     if((fd = fopen(fname, "rb")) == NULL) {
-        klog(KLOG_SUBJECT_KMGR, LL_ERROR, "can not open fw");
+        klog(KLOG_SUBJECT_KMGR, LL_ERROR, "load_k60b: cannot open firmware '%s': %s", fname, strerror(errno));
         rv = -1;
     } else {
         fwLen = fread(mcFwBuf, 1, sizeof(mcFwBuf), fd);
         fclose(fd);
         snprintf(fname, sizeof(fname), "%s/%s", env_kfs, env_brcmbin);
         if((fd = fopen(fname, "rb")) == NULL) {
-            klog(KLOG_SUBJECT_KMGR, LL_ERROR, "can not open bin");
+            klog(KLOG_SUBJECT_KMGR, LL_ERROR, "load_k60b: cannot open configuration '%s': %s", fname, strerror(errno));
             rv = -2;
         } else {
             binLen = fread(mcBinBuf, 1, sizeof(mcBinBuf), fd);
@@ -1150,6 +1167,10 @@ struct {
 } kmgr_clients[KMGR_CLIENT_LAST];
 
 extern kmgr_response_t *kmgr_issue_command(int client, char *buff, int length) {
+    if(client < 0 || client >= KMGR_CLIENT_LAST || buff == NULL || length <= 0) {
+        klog(KLOG_SUBJECT_KMGR, LL_ERROR, "kmgr_issue_command: invalid client=%d request_length=%d", client, length);
+        return NULL;
+    }
     kmgr_clients[client].req_length = length;
     kmgr_clients[client].req_buff = buff; // must be set after length
     pthread_mutex_lock(&kmgr_issue_command_mutex);
@@ -1168,6 +1189,7 @@ extern int switch_k60s_to_relay_mode(void) {
     if (strcmp(response.status, "OK") == 0)
         return 1;
 
+    klog(KLOG_SUBJECT_KMGR, LL_ERROR, "switch_k60s_to_relay_mode: command failed; status=%s", response.status);
     return 0;
 }
 
@@ -1241,7 +1263,7 @@ void kmgr_init(char *env_fname) {
                 }
                 *value = 0;
                 value++;
-                while(strchr(" \t", *value)) {
+                while(*value && strchr(" \t", *value)) {
                     value++;
                 }
                 INT32 i, idx = -1;
@@ -1253,21 +1275,29 @@ void kmgr_init(char *env_fname) {
                 }
                 if(idx >= 0) {
                     klog(KLOG_SUBJECT_KMGR, LL_DEBUG, "env_item %s <- %s", line, value);
-                    snprintf(env_items[idx].value, env_items[idx].size, "%s", value);
+                    if(snprintf(env_items[idx].value, env_items[idx].size, "%s", value) >= (int)env_items[idx].size)
+                        klog(KLOG_SUBJECT_KMGR, LL_WARNG, "kmgr_init: configuration value truncated; key=%s capacity=%u", line, env_items[idx].size);
+                } else {
+                    klog(KLOG_SUBJECT_KMGR, LL_WARNG, "kmgr_init: unknown configuration key=%s", line);
                 }
 
             }
-            fclose(fd);
+            if(ferror(fd)) klog(KLOG_SUBJECT_KMGR, LL_ERROR, "kmgr_init: failed to read configuration '%s': %s", env_fname, strerror(errno));
+            if(fclose(fd) != 0) klog(KLOG_SUBJECT_KMGR, LL_ERROR, "kmgr_init: failed to close configuration '%s': %s", env_fname, strerror(errno));
+        } else {
+            klog(KLOG_SUBJECT_KMGR, LL_ERROR, "kmgr_init: failed to open configuration '%s': %s; using defaults", env_fname, strerror(errno));
         }
     }
 
     // init semaphores
     if(sem_init(&kmgr_wait_sem, 0, 0) != 0) {
-        klog(KLOG_SUBJECT_KMGR, LL_ERROR, "can not init kmgr_wait_sem");
+        klog(KLOG_SUBJECT_KMGR, LL_CRTCL, "kmgr_init: cannot initialize manager semaphore: %s", strerror(errno));
+        exit(EXIT_FAILURE);
     }
     for(i=0; i<sizeof(kmgr_clients)/sizeof(kmgr_clients[0]); i++) {
         if(sem_init(&kmgr_clients[i].wait_sem, 0, 0) != 0) {
-            klog(KLOG_SUBJECT_KMGR, LL_ERROR, "can not init client %d's wait_sem");
+            klog(KLOG_SUBJECT_KMGR, LL_CRTCL, "kmgr_init: cannot initialize client=%u semaphore: %s", i, strerror(errno));
+            exit(EXIT_FAILURE);
         }
     }
 
@@ -1275,7 +1305,12 @@ void kmgr_init(char *env_fname) {
     pthread_attr_t plr_thread_attributes;
     pthread_attr_init(&plr_thread_attributes);
     pthread_attr_setdetachstate(&plr_thread_attributes, PTHREAD_CREATE_DETACHED);
-    pthread_create(&kplr_thread, &plr_thread_attributes, &kmgr_thread_poller, NULL);
+    int thread_result = pthread_create(&kplr_thread, &plr_thread_attributes, &kmgr_thread_poller, NULL);
+    pthread_attr_destroy(&plr_thread_attributes);
+    if(thread_result != 0) {
+        klog(KLOG_SUBJECT_KMGR, LL_CRTCL, "kmgr_init: failed to start poller thread: %s", strerror(thread_result));
+        exit(EXIT_FAILURE);
+    }
 
     // populate help db with local commands
     memset(&help_db, 0, sizeof(help_db));

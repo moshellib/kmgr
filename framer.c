@@ -4,6 +4,7 @@
 
 #include "gl_types.h"
 #include "framer.h"
+#include "kdefs.h"
 
 static void init_csm_tx(csm_tx_t *csm_tx) {
     memset(csm_tx, 0, sizeof(*csm_tx));
@@ -59,6 +60,12 @@ UINT32 framer_rx_convert(framer_ctx_t *ctx, UINT8 *data_in, UINT32 length_in, UI
     // the caller must not used data before it accepts an end pdu...
 	UINT32 pos_in = 0, pos_out = 0, out = 0;
 	UINT8 byte, pf = 0;
+	if(ctx == NULL || (length_in && data_in == NULL) || (max_length_out && data_out == NULL)) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "framer_rx_convert: invalid buffers");
+		if(len_out) *len_out = 0;
+		if(pdu_flags) *pdu_flags = 0;
+		return 0;
+	}
 	while((pos_in < length_in) && (out == 0)) {
 		byte = data_in[pos_in++];
 		switch(ctx->rx_state) {
@@ -104,7 +111,8 @@ UINT32 framer_rx_convert(framer_ctx_t *ctx, UINT8 *data_in, UINT32 length_in, UI
                     out = 1;
                 } else {
 				    data_out[pos_out++] = byte;
-                    update_csm_rx(&ctx->csms_rx[ctx->last_rx_sub_channel], byte);
+					if(ctx->csms_rx)
+						update_csm_rx(&ctx->csms_rx[ctx->last_rx_sub_channel], byte);
                 }
 			}
 			break;
@@ -145,7 +153,8 @@ UINT32 framer_rx_convert(framer_ctx_t *ctx, UINT8 *data_in, UINT32 length_in, UI
                         out = 1;
                     } else {
 				        data_out[pos_out++] = ctx->escape_char;
-                        update_csm_rx(&ctx->csms_rx[ctx->last_rx_sub_channel], ctx->escape_char);
+						if(ctx->csms_rx)
+							update_csm_rx(&ctx->csms_rx[ctx->last_rx_sub_channel], ctx->escape_char);
 			            ctx->rx_state = FRAMER_STATE_CHR;
                     }
 			    }
@@ -190,9 +199,19 @@ UINT32 framer_tx_convert_single(framer_ctx_t *ctx, UINT8 pdu_flags, UINT8 *data_
 	UINT32 pos_in = 0;
 	UINT32 pos_out = 0;
 	UINT32 tmp1, tmp2, tmp3;
+	if(ctx == NULL || len_out == NULL || data_out == NULL || (length_in && data_in == NULL) || sub_channel >= ctx->tx_sub_channels || ctx->segment_max_size < 4) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "framer_tx_convert_single: invalid buffers, segment size or subchannel=%u", sub_channel);
+		if(len_out) *len_out = 0;
+		return 0;
+	}
 	if(max_length_out < 4) {
 		*len_out = 0;
 		return 0; // no point in converting anything...
+	}
+	if((pdu_flags & PDU_FLAG_END) && (pdu_flags & PDU_FLAG_CSM_PASS) && ctx->csms_tx && (max_length_out < 6 || ctx->segment_max_size < 6)) {
+		*len_out = 0;
+		klog(KLOG_SUBJECT_KMGR, LL_WARNG, "framer_tx_convert_single: insufficient space for checksum trailer");
+		return 0;
 	}
 	data_out[pos_out++] = ctx->escape_char;
 	if(pdu_flags & PDU_FLAG_START) {
@@ -236,6 +255,11 @@ UINT32 framer_tx_convert(framer_ctx_t *ctx, UINT8 pdu_flags, UINT8 *data_in, UIN
 	UINT32 pos_out = 0;
 	UINT32 tmp, seg_len_out;
 	UINT8 pf = pdu_flags;
+	if(ctx == NULL || len_out == NULL || data_out == NULL || (length_in && data_in == NULL)) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "framer_tx_convert: invalid buffers");
+		if(len_out) *len_out = 0;
+		return 0;
+	}
 	do {
 		tmp = framer_tx_convert_single(ctx, pf, &data_in[pos_in], length_in - pos_in, sub_channel, &seg_len_out, &data_out[pos_out], max_length_out -pos_out);
 		pos_in += tmp;

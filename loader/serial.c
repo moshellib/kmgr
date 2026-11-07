@@ -37,6 +37,8 @@
 #include "sysdep.h"
 #include "hc08sprg.h"
 #include "serial.h"
+#include "../gl_types.h"
+#include "../kdefs.h"
 
 #ifdef _WINDOWS
 
@@ -100,6 +102,7 @@ int init_uart(char* nm, char* speed)
 		close_uart();
 
 		fprintf(stderr, "Bad serial mode specified: '%c' (use 'S', 'D' or '?' only)\n", serial_mode);
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "init_uart: unsupported serial mode='%c'", serial_mode);
 		return -1;
 	}
 
@@ -154,10 +157,10 @@ int flush_uart(int out, int in)
 
 int wb(const void* data, unsigned len)
 {
-	if(serial_mode == SMOD_SINGLE)
-		rxignore += len;
-
-	return _wb(data, len);
+	int result = _wb(data, len);
+	if(serial_mode == SMOD_SINGLE && result > 0)
+		rxignore += result;
+	return result;
 }
 
 // read block, return -1=error, or number of bytes read
@@ -169,6 +172,10 @@ int rb(void* dest, unsigned len)
 	{
 		char* dummy = (char*) malloc(rxignore);
 		int ret;
+		if(dummy == NULL) {
+			klog(KLOG_SUBJECT_KMGR, LL_ERROR, "rb: failed to allocate echo-discard buffer; bytes=%u", rxignore);
+			return -1;
+		}
 
 		DBG1("want to ignore %d bytes\n", rxignore);
 		ret = _rb(dummy, rxignore);

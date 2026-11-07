@@ -559,7 +559,7 @@ int hook_reset(void)
 			{
 				printf("\r\n");
 				fprintf(stderr, "Error receiving reset ACK - TIMEOUT.\r\n");
-				return -1;			
+				return KLOG_RETURN_ERROR(-1);
 			}
 
 		}
@@ -570,14 +570,14 @@ int hook_reset(void)
 	{
 		printf("\r\n");
 		fprintf(stderr, "Error receiving reset ACK.\r\n");
-		return -1;		 
+		return KLOG_RETURN_ERROR(-1);
 	}
 
 	// enter interactive mode
 	if(wb(&d, 1) <= 0)
 	{
 		fprintf(stderr, "Error sending locking ACK.\r\n");
-		return -1;		 
+		return KLOG_RETURN_ERROR(-1);
 	}
 
 	// wait for finish
@@ -604,7 +604,7 @@ int calibrate_speed(int short_trim)
 		{
 			if(cnt) printf("\r\n");
 			fprintf(stderr, "Error receiving calibrate ACK.\r\n");
-			return -1;
+			return KLOG_RETURN_ERROR(-1);
 		}
 		// got something
 		else if(ret > 0)
@@ -614,7 +614,7 @@ int calibrate_speed(int short_trim)
 			{
 				if(cnt) printf("\r\n");
 				fprintf(stderr, "Wrong calibrate response (0x%02x, must be 0x%02x). Target is not calibrated.\r\n", b, ACK);
-				continue;//return -1;
+				continue;//return KLOG_RETURN_ERROR(-1);
 			}
 			// OK, exit calibration loop
 			break;
@@ -637,7 +637,7 @@ int calibrate_speed(int short_trim)
 		{
 			if(cnt) printf("\r\n");
 			fprintf(stderr, "Can't send trim pulse.\r\n");
-			return -1;
+			return KLOG_RETURN_ERROR(-1);
 		}
 
 		// another break sent
@@ -647,7 +647,7 @@ int calibrate_speed(int short_trim)
 		if(cnt > SPEED_CALIB_MAX_ATTEMPS)
 		{
 			fprintf(stderr, "\r\nThe maximum attemps reached to try calibrate clocks. Try again with diffrent baudrate settings.\r\n");
-			return -1;
+			return KLOG_RETURN_ERROR(-1);
 		}
 
 	};
@@ -661,15 +661,15 @@ int calibrate_speed(int short_trim)
 ///////////////////////////////////////////////////////////////
 // simple return-on-error macros
 
-#define R8(var)		{if(rb(var, 1) != 1) return -1;}
-#define R16(var)	{if(r16(var) <= 0) return -1;}
-#define R24(var)	{if(r24(var) <= 0) return -1;}
-#define R32(var)	{if(r32(var) <= 0) return -1;}
+#define R8(var)		{if(rb(var, 1) != 1) return KLOG_RETURN_ERROR(-1);}
+#define R16(var)	{if(r16(var) <= 0) return KLOG_RETURN_ERROR(-1);}
+#define R24(var)	{if(r24(var) <= 0) return KLOG_RETURN_ERROR(-1);}
+#define R32(var)	{if(r32(var) <= 0) return KLOG_RETURN_ERROR(-1);}
 
-#define W8(n)		{ BYTE _x=n; if(wb(&_x, 1) != 1) return -1; }
-#define W16(n)		{if(w16(n) <= 0) return -1;}
-#define W24(n)		{if(w24(n) <= 0) return -1;}
-#define W32(n)		{if(w32(n) <= 0) return -1;}
+#define W8(n)		{ BYTE _x=n; if(wb(&_x, 1) != 1) return KLOG_RETURN_ERROR(-1); }
+#define W16(n)		{if(w16(n) <= 0) return KLOG_RETURN_ERROR(-1);}
+#define W24(n)		{if(w24(n) <= 0) return KLOG_RETURN_ERROR(-1);}
+#define W32(n)		{if(w32(n) <= 0) return KLOG_RETURN_ERROR(-1);}
 //////////////////////////////////////////////////////////////
 // get basic info about target board
 
@@ -736,7 +736,7 @@ int read_mcu_info(void)
     {
         klog(KLOG_SUBJECT_KMGR, LL_ERROR, "bl_version %x is wrong", bl_version);
 #ifdef _OCTEON
-        return -100; // this is an error on siklu board! do not continue
+        return KLOG_RETURN_ERROR(-100); // this is an error on siklu board! do not continue
 #endif //    _OCTEON
     }
 
@@ -762,7 +762,7 @@ int read_mcu_info(void)
 		
 		// read private data
 		if(rb(&ident.priv_data, sizeof(ident.priv_data)) != sizeof(ident.priv_data))
-			return -1;
+			return KLOG_RETURN_ERROR(-1);
 
 		if(bl_crcs)
 		{
@@ -776,13 +776,13 @@ int read_mcu_info(void)
 		}
 
 		if(mcu_info_readIdentStr() < 0)
-			return -2;
+			return KLOG_RETURN_ERROR(-2);
 
 		if(bl_crcs)
 		{
 			R16(&msg_crc);
 			if(msg_crc != prog_crc)
-				return -3;
+				return KLOG_RETURN_ERROR(-3);
 		}
 
 	} 
@@ -801,7 +801,7 @@ int read_mcu_info(void)
 		ident.sdidrev = ((sdidh & 0xF0) >> 4);
 		R8(&ident.num_blocks);
 		if ((ident.num_blocks > MAX_NUM_BLOCKS) || (ident.num_blocks == 0))
-			return -4;
+			return KLOG_RETURN_ERROR(-4);
 		for(i=0; i<ident.num_blocks; i++)
 		{
 			if((bl_version == BL_HCS08_LARGE) || (bl_version == BL_HCS08_LONG))	// versions 10 + 12 (HCS08 with >64kB memory) is 24-bit address here
@@ -845,13 +845,13 @@ int read_mcu_info(void)
 		}
 
 		if(mcu_info_readIdentStr() < 0)
-			return -5;
+			return KLOG_RETURN_ERROR(-5);
 
 		if(bl_crcs)
 		{
 			R16(&msg_crc);
 			if(msg_crc != prog_crc)
-				return -6;
+				return KLOG_RETURN_ERROR(-6);
 		}
 
 		if (bl_version != BL_HC08_LARGE)	// check only S08 families, not HC08
@@ -891,7 +891,7 @@ int read_mcu_info(void)
 		ident.sdidrev = ((sdidh & 0xF0) >> 4);
 		R32(&ident.num_blocks);
 		if ((ident.num_blocks > MAX_NUM_BLOCKS) || (ident.num_blocks == 0))
-			return -7;
+			return KLOG_RETURN_ERROR(-7);
 		for(i=0; i<ident.num_blocks; i++)
 		{
 			R32(&ident.mem_start[i]);
@@ -920,13 +920,13 @@ int read_mcu_info(void)
 		}
 
 		if(mcu_info_readIdentStr() < 0)
-			return -8;
+			return KLOG_RETURN_ERROR(-8);
 
 		if(bl_crcs)
 		{
 			R16(&msg_crc);
 			if(msg_crc != prog_crc)
-				return -9;
+				return KLOG_RETURN_ERROR(-9);
 		}
 
 		chipid = sdidprops[sdid2index(ident.sdid)].name;
@@ -966,7 +966,7 @@ int read_mcu_info(void)
 		ident.sdidrev = ((sdidh & 0xF0) >> 4);
 		R32(&ident.num_blocks);
 		if ((ident.num_blocks > MAX_NUM_BLOCKS) || (ident.num_blocks == 0))
-			return -10;
+			return KLOG_RETURN_ERROR(-10);
 		for(i=0; i<ident.num_blocks; i++)
 		{
 			R32(&ident.mem_start[i]);
@@ -995,13 +995,13 @@ int read_mcu_info(void)
 		}
 
 		if(mcu_info_readIdentStr() < 0)
-			return -11;
+			return KLOG_RETURN_ERROR(-11);
 
 		if(bl_crcs)
 		{
 			R16(&msg_crc);
 			if(msg_crc != prog_crc)
-				return -12;
+				return KLOG_RETURN_ERROR(-12);
 		}
 
 		chipid = sdidprops[sdid2index(ident.sdid)].name;
@@ -1044,7 +1044,7 @@ int read_mcu_info(void)
 	    fprintf(stderr, "\r\n\r\nERROR! Unknown protocol version: [0x%02X]! \r\nCheck AN2295SW for update!\r\n\r\n", bl_version);
 		klog(KLOG_SUBJECT_KMGR, LL_ERROR,
 		        "\r\n\r\nERROR! Unknown protocol version: [0x%02X]! \r\nCheck AN2295SW for update!\r\n\r\n", bl_version);
-		return -13;
+		return KLOG_RETURN_ERROR(-13);
 	}
 	return 0;
 }
@@ -1280,7 +1280,7 @@ int erase_blk(unsigned int a)
 
 	DBG1("\nerase_blk: 0x%08x\n", a);
 	if(a >= MAX_ADDRESS)
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 
 	// issue command
 	flush_uart(FDISCARD, FDISCARD);
@@ -1308,7 +1308,7 @@ int erase_blk(unsigned int a)
 		; // do nothing
 
 	if(!ret)
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 
 	if(bl_crcs)
 	{
@@ -1317,7 +1317,7 @@ int erase_blk(unsigned int a)
 		CRC_AddByte(&prog_crc, d);
 		
 		if(msg_crc != prog_crc)
-			return -2;
+			return KLOG_RETURN_ERROR(-2);
 	}
 
 	// it must be ACK character
@@ -1334,7 +1334,7 @@ int erase_blk(unsigned int a)
 int read_blk(unsigned a, int len, BYTE *dest)
 {
 	if(len < 0 || len >= MAX_LENGTH || a >= MAX_ADDRESS)
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 
 	// issue command
 	flush_uart(FDISCARD, FDISCARD);
@@ -1360,7 +1360,7 @@ int read_blk(unsigned a, int len, BYTE *dest)
 
 	// block read
 	if(rb(dest, len) != len)
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 
 	if(bl_crcs)
 	{
@@ -1369,7 +1369,7 @@ int read_blk(unsigned a, int len, BYTE *dest)
 		CRC_AddByteArray(&prog_crc, dest, len);
 
 		if(msg_crc != prog_crc)
-			return -2;
+			return KLOG_RETURN_ERROR(-2);
 	}
 
 	// return number of bytes read (==requested)
@@ -1386,7 +1386,7 @@ int prg_blk(unsigned int a, int len)
 
 	DBG2("\nprg_blk: 0x%08x-0x%08x\n", a, a+len-1);
 	if(len < 0 || len >= MAX_LENGTH || a >= MAX_ADDRESS) 
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 
 	// issue command
 	flush_uart(FDISCARD, FDISCARD);
@@ -1398,7 +1398,7 @@ int prg_blk(unsigned int a, int len)
 	W8(len);
 
 	if(wb(&image.d[a], len) != len)
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 
 	if(bl_crcs)
 	{
@@ -1420,7 +1420,7 @@ int prg_blk(unsigned int a, int len)
 		; // do nothing
 
 	if(!ret)
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 
 	if(bl_crcs)
 	{
@@ -1429,7 +1429,7 @@ int prg_blk(unsigned int a, int len)
 		CRC_AddByte(&prog_crc, d);
 		
 		if(msg_crc != prog_crc)
-			return -2;
+			return KLOG_RETURN_ERROR(-2);
 	}
 
 	// must be ACK character
@@ -1456,7 +1456,7 @@ static int prg_area(unsigned char block, unsigned int start, unsigned int end)
 
 	DBG2("prg_only_area: 0x%08x-0x%08x\n", start, end);
 	if(start >= MAX_ADDRESS || end >= MAX_ADDRESS) 
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 
 	// count valid bytes
 	for(i=start; i<end; i++)
@@ -1520,7 +1520,7 @@ static int prg_area(unsigned char block, unsigned int start, unsigned int end)
 					fprintf(stderr, "Can't program block %d at address 0x%08X\r\n", block, wr);
 				else
 					fprintf(stderr, "Can't program block %d at address 0x%04X\r\n", block, wr);
-				return -1;
+				return KLOG_RETURN_ERROR(-1);
 			}
 
 			if((bl_rcs) && (verify))	// read command implemented!
@@ -1545,7 +1545,7 @@ static int prg_area(unsigned char block, unsigned int start, unsigned int end)
 						fprintf(stderr, "Can't read block %d at address 0x%08X\r\n", block, wr);
 					else
 						fprintf(stderr, "Can't read block %d at address 0x%04X\r\n", block, wr);
-					return -1;
+					return KLOG_RETURN_ERROR(-1);
 				}
 
 				for(adr = wr; adr < wr+wr_one; adr++)
@@ -1564,7 +1564,7 @@ static int prg_area(unsigned char block, unsigned int start, unsigned int end)
 							fprintf(stderr, "\r\nVerification failed at block %d, address 0x%08X, image: [0x%02X], MCU: [0x%02X]\r\n", block, adr, image.d[adr], rbuff[adr-wr]);
 						else
 							fprintf(stderr, "\r\nVerification failed at block %d, address 0x%04X, image: [0x%02X], MCU: [0x%02X]\r\n", block, adr, image.d[adr], rbuff[adr-wr]);
-						return -1;
+						return KLOG_RETURN_ERROR(-1);
 					}
 				}
 			}
@@ -1600,7 +1600,7 @@ static int prg_only_area(unsigned char block, unsigned int start, unsigned int e
 
 	DBG2("prg_only_area: 0x%08x-0x%08x\n", start, end);
 	if(start >= MAX_ADDRESS || end >= MAX_ADDRESS) 
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 
 	// count valid bytes
 	for(i=start; i<end; i++)
@@ -1664,7 +1664,7 @@ static int prg_only_area(unsigned char block, unsigned int start, unsigned int e
 					fprintf(stderr, "Can't program block %d at address 0x%08X\r\n", block, wr);
 				else
 					fprintf(stderr, "Can't program block %d at address 0x%04X\r\n", block, wr);
-				return -1;
+				return KLOG_RETURN_ERROR(-1);
 			}
 
 		}else
@@ -1697,12 +1697,12 @@ static int check_area(unsigned char block, unsigned int start, unsigned int end)
 	if(!bl_rcs)	// read command implemented!
 	{
 		fprintf(stderr, "\r\nCheck Blank area failed - Read command is not supported");
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 	}
 
 	DBG2("check_area: 0x%08x-0x%08x\n", start, end);
 	if(start >= MAX_ADDRESS || end >= MAX_ADDRESS) 
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 
 	// count valid bytes
 	for(i=start; i<end; i++)
@@ -1739,7 +1739,7 @@ static int check_area(unsigned char block, unsigned int start, unsigned int end)
 				fprintf(stderr, "Can't read block %d at address 0x%08X\r\n", block, rd);
 			else
 				fprintf(stderr, "Can't read block %d at address 0x%04X\r\n", block, rd);
-			return -1;
+			return KLOG_RETURN_ERROR(-1);
 		}
 		
 		for(i = 0; i < rd_one; i++)
@@ -1755,7 +1755,7 @@ static int check_area(unsigned char block, unsigned int start, unsigned int end)
 				else
 					printf("\rBlank memory block %d check failed on address: 0x%04X %d%%", block, rd + i, 100*read/total);
 				
-				return -2;
+				return KLOG_RETURN_ERROR(-2);
 			}
 		}
 
@@ -1787,12 +1787,12 @@ static int verify_area(unsigned char block, unsigned int start, unsigned int end
 	if(!bl_rcs)	// read command implemented!
 	{
 		fprintf(stderr, "\r\nVerify area failed - Read command is not supported");
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 	}
 
 	DBG2("verify_area: 0x%08x-0x%08x\n", start, end);
 	if(start >= MAX_ADDRESS || end >= MAX_ADDRESS) 
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 
 	// count valid bytes
 	for(i=start; i<end; i++)
@@ -1849,7 +1849,7 @@ static int verify_area(unsigned char block, unsigned int start, unsigned int end
 				fprintf(stderr, "Can't read block %d at address 0x%08X\r\n", block, rd);
 			else
 				fprintf(stderr, "Can't read block %d at address 0x%04X\r\n", block, rd);
-			return -1;
+			return KLOG_RETURN_ERROR(-1);
 		}
 		
 		for(i = 0; i < rd_one; i++)
@@ -1871,7 +1871,7 @@ static int verify_area(unsigned char block, unsigned int start, unsigned int end
 				else
 					printf("\rCompare memory block %d failed on address: 0x%04X %d%%", block, rd + i, 100*read/total);
 				
-				return -2;
+				return KLOG_RETURN_ERROR(-2);
 			}
 		}
 
@@ -1903,12 +1903,12 @@ static int read_area(unsigned char block, unsigned int start, unsigned int end, 
 	if(!bl_rcs)	// read command implemented!
 	{
 		fprintf(stderr, "\r\nRead area failed - Read command is not supported");
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 	}
 
 	DBG2("read_area: 0x%08x-0x%08x\n", start, end);
 	if(start >= MAX_ADDRESS || end >= MAX_ADDRESS) 
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 	
 	total = end - start + 1; 
 	rd_one = 0xff;
@@ -1934,7 +1934,7 @@ static int read_area(unsigned char block, unsigned int start, unsigned int end, 
 				fprintf(stderr, "Can't read block %d at address 0x%08X\r\n", block, rd);
 			else
 				fprintf(stderr, "Can't read block %d at address 0x%04X\r\n", block, rd);
-			return -1;
+			return KLOG_RETURN_ERROR(-1);
 		}
 		
 		for(i = 0; i < rd_one; i++)
@@ -1974,7 +1974,7 @@ static int erase_area(unsigned char block, unsigned int start, unsigned int end,
 	DBG2("erase_area: 0x%08x-0x%08x\n", start, end);
 	
 	if(start >= MAX_ADDRESS || end >= MAX_ADDRESS) 
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 
 	// count valid bytes
 	for(i=start; i<end; i++)
@@ -2027,7 +2027,7 @@ static int erase_area(unsigned char block, unsigned int start, unsigned int end,
 				fprintf(stderr, "Can't erase block %d at address 0x%08X\r\n", block, er);
 			else	
 				fprintf(stderr, "Can't erase block %d at address 0x%04X\r\n", block, er);
-			return -1;
+			return KLOG_RETURN_ERROR(-1);
 		}
 		
 		Progress_Set(block, 100*erased/total);
@@ -2055,12 +2055,12 @@ int	prg_mem(void)
 		if(image.f[e-1]) break;
 
 	if(erase_mem(1) < 0)
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 
 	Progress_Reset(1);
 
 	if(prg_area(0, s, e) < 0)
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 
 
 	if((bl_version == BL_CFV1) || (bl_version == BL_KINETIS))
@@ -2101,7 +2101,7 @@ int	prg_only_mem(void)
 	Progress_Reset(1);
 
 	if(prg_only_area(0, s, e) < 0)
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 
 
 	if ((bl_version == BL_HCS08_LARGE) || (bl_version == BL_HCS08_LONG) || (bl_version == BL_CFV1)) 
@@ -2182,7 +2182,7 @@ int read_mem(BOARD_MEM* pImage, int readIT)
 		else if(bl_version == BL_CFV1)
 		{
 			printf("ColdFire Vector table read is not supported!");
-			return -1;
+			return KLOG_RETURN_ERROR(-1);
 			// decide if the Coldfire is using vector table or jump table
 			/*
 			// start of jump table
@@ -2259,14 +2259,14 @@ int	checksum_mem(void)
 	if(pImageCRC == NULL)
 	{
 		printf("\rCRC CheckSum CAN NOT be computed. Not enough memory.\n");
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 	}
 	
 	if((type != BL_HCS08) && (type != BL_HCS08_LONG) && (type != BL_HCS08_LARGE))
 	{
 		free(pImageCRC);
 		printf("\rThe unsupported device. The full Flash memory checksum is supported only for HCS08 devices.\n");
-		return -1;
+		return KLOG_RETURN_ERROR(-1);
 	}
 
 	CRC_ResetCRC(&checksumCRC, 0x0000);
@@ -2504,6 +2504,7 @@ int	check_image()
 	return 0;
 
 err_hit:
+	klog(KLOG_SUBJECT_KMGR, LL_WARNG, "check_image: firmware address=0x%X is outside target memory blocks", a);
 #if 0
 	if ((bl_version == BL_HCS08_LARGE) || (bl_version == BL_HCS08_LONG)) 
 		fprintf(stderr, "\r\nWARNING! S19 image will not fit into available memory (at address 0x%06X)!\r\n", a);

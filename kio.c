@@ -4,6 +4,7 @@
 #include <fcntl.h>
 #include <termios.h>
 #include <string.h>
+#include <limits.h>
 
 #ifdef _OCTEON
 #include "modem.h"
@@ -241,6 +242,10 @@ void *kio_thread_main(void *arg) {
 	tio.c_cc[VTIME]=5;
 
 	kio_data.tty_fd=open(env_tty, O_RDWR | O_NONBLOCK);
+	if(kio_data.tty_fd < 0) {
+		klog(KLOG_SUBJECT_KMGR, LL_CRTCL, "kio_thread_main: failed to open device=%s: %s", env_tty, strerror(errno));
+		return NULL;
+	}
 	str = env_baud;
 	baud_rate = strtol(str,&endptr,10);
 	switch (baud_rate)
@@ -298,7 +303,11 @@ void *kio_thread_main(void *arg) {
 	cfsetospeed(&tio,BAUD);            // 115200 baud
 	cfsetispeed(&tio,BAUD);            // 115200 baud
 
-	tcsetattr(kio_data.tty_fd,TCSANOW,&tio);
+	if(tcsetattr(kio_data.tty_fd,TCSANOW,&tio) < 0) {
+		klog(KLOG_SUBJECT_KMGR, LL_CRTCL, "kio_thread_main: failed to configure device=%s baud=%s: %s", env_tty, env_baud, strerror(errno));
+		close(kio_data.tty_fd);
+		return NULL;
+	}
 
     while (1) {
         UINT8 rxbuff[32];
@@ -315,6 +324,11 @@ void *kio_thread_main(void *arg) {
     	}
     	// handle incoming data on serial port
     	rxlen = kio_data.flags & KIO_FLAG_NO_READ ? 0 : read(kio_data.tty_fd, &rxbuff, sizeof(rxbuff));
+		if(rxlen < 0 && errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+			klog(KLOG_SUBJECT_KMGR, LL_CRTCL, "kio_thread_main: serial read failed for device=%s: %s", env_tty, strerror(errno));
+			close(kio_data.tty_fd);
+			return NULL;
+		}
     	if (rxlen > 0) {
     		// new data is available on the serial port, handle it
     		++ops;
@@ -412,6 +426,10 @@ void *kio_thread_main(void *arg) {
 
 UINT32 kio_read(UINT32 subc, void *buf, UINT32 length) {
 	UINT32 r;
+	if(subc >= N_K2H_SUBC + 2 || (length && buf == NULL) || length > INT_MAX) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "kio_read: invalid subchannel=%u length=%u", subc, length);
+		return 0;
+	}
 	if((r = kio_buff_out(&kio_data.rx_subc[subc], buf, length, NULL)) > 0) {
 		return r;
 	}
@@ -420,11 +438,23 @@ UINT32 kio_read(UINT32 subc, void *buf, UINT32 length) {
 
 
 UINT32 kio_write(UINT32 subc, void *buf, UINT32 length, UINT32 commit, UINT32 pdu_flags) {
-	return kio_buff_in(&kio_data.tx_subc[subc], buf, length, (int)commit, (int)pdu_flags);
+	UINT32 written;
+	if(subc >= N_H2K_SUBC + 1 || (length && buf == NULL) || length > INT_MAX) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "kio_write: invalid subchannel=%u length=%u", subc, length);
+		return 0;
+	}
+	written = kio_buff_in(&kio_data.tx_subc[subc], buf, length, (int)commit, (int)pdu_flags);
+	if(written != length)
+		klog(KLOG_SUBJECT_KMGR, LL_WARNG, "kio_write: buffer full; subchannel=%u written=%u requested=%u", subc, written, length);
+	return written;
 }
 
 
 UINT32 kio_commit(UINT32 subc) {
+	if(subc >= N_H2K_SUBC + 1) {
+		klog(KLOG_SUBJECT_KMGR, LL_ERROR, "kio_commit: invalid subchannel=%u", subc);
+		return (UINT32)-1;
+	}
 	return kio_buff_commit(&kio_data.tx_subc[subc]);
 }
 
