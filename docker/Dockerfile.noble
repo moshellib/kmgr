@@ -1,0 +1,10 @@
+# Build environment for Raspberry Pi running Ubuntu 24.04 (noble) arm64.
+# Build with: docker build --platform linux/arm64 -f docker/Dockerfile.noble docker
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential debhelper dpkg-dev fakeroot file \
+    && rm -rf /var/lib/apt/lists/*

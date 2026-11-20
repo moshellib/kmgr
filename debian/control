@@ -2,9 +2,8 @@ Source: kmgr
 Section: utils
 Priority: optional
 Maintainer: KMGR Maintainers <root@localhost>
-Build-Depends: debhelper-compat (= 13)
-Standards-Version: 4.6.2
-Rules-Requires-Root: no
+Build-Depends: debhelper (>= 10)
+Standards-Version: 3.9.8
 
 Package: kmgr
 Architecture: arm64 armhf

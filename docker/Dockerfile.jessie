@@ -1,0 +1,18 @@
+# Build environment for legacy Raspberry Pi 2/3 running Raspbian/Debian 8
+# (jessie, kernel 4.4, gcc 4.9, glibc 2.19, systemd 215).
+# Build with: docker build --platform linux/arm/v7 -f docker/Dockerfile.jessie docker
+#
+# debian/eol:jessie already points apt at archive.debian.org and accepts the
+# archive's expired Release signatures/validity dates.
+FROM debian/eol:jessie
+
+ENV DEBIAN_FRONTEND=noninteractive LC_ALL=C.UTF-8
+
+RUN echo 'deb http://archive.debian.org/debian jessie-backports main' \
+        > /etc/apt/sources.list.d/backports.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential dpkg-dev fakeroot file ca-certificates \
+    && apt-get install -y --no-install-recommends -t jessie-backports \
+        debhelper \
+    && rm -rf /var/lib/apt/lists/*

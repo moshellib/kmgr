@@ -87,7 +87,7 @@ systemd journal.
 | Application | `/usr/bin/kmgr` |
 | `resources/*.cfg` | `/etc/kmgr/` |
 | `resources/*.sh` | `/usr/local/bin/` |
-| `resources/*.service` | `/usr/lib/systemd/system/` |
+| `resources/*.service` | `/usr/lib/systemd/system/` (`/lib/systemd/system/` on jessie) |
 | KFS firmware | `/usr/share/kmgr/kfs/z_skm.hex` |
 
 Configuration files are Debian conffiles: local modifications are preserved
@@ -122,3 +122,35 @@ debconf answers. The system account is retained to avoid reassigning its UID.
 The requested `/usr/local/bin` installation is intentional, although Debian
 policy normally reserves `/usr/local` for administrator-managed files; this
 package is intended for local deployment, not submission to the Ubuntu archive.
+
+## Docker builds: legacy Raspbian jessie (armhf) and Ubuntu 24.04 (arm64)
+
+Step-by-step instructions are in [build.md](build.md).
+
+Packages for both Pi generations can be built on any Docker host. The
+packaging uses debhelper compat level 10, so the same `debian/` directory
+builds with debhelper 10 (jessie-backports) and debhelper 13 (Ubuntu 24.04).
+
+| Target | Command | Image / platform | Toolchain | Output |
+| --- | --- | --- | --- | --- |
+| Raspberry Pi 2/3 on Raspbian/Debian 8 jessie (kernel 4.4, `-v7+`) | `make deb-jessie` | `debian/eol:jessie`, `linux/arm/v7` | gcc 4.9, glibc 2.19 | `dist/jessie/kmgr_1.0.0+deb8_armhf.deb` |
+| Raspberry Pi on Ubuntu 24.04 | `make deb-noble` | `ubuntu:24.04`, `linux/arm64` | gcc 13, glibc 2.39 | `dist/noble/kmgr_1.0.0+ubuntu24.04_arm64.deb` |
+
+`make deb-all` builds both. `K60_FIRMWARE` works as for `make deb`. Each build
+runs `make test` inside the container before packaging and prints the highest
+glibc symbol version the binary needs.
+
+On an x86 host, register QEMU user-mode emulation once per boot first:
+
+```sh
+docker run --privileged --rm tonistiigi/binfmt --install arm,arm64
+```
+
+The jessie image is ARMv7 Debian armhf, suitable for Pi 2/3 (`-v7+` kernels).
+ARMv6 boards (Pi 1, Zero) are not supported by this image. Debian 8 is end of
+life; its packages come from archive.debian.org with expired signing keys
+accepted. `make check-c90` (part of `make test`) compiles every source with
+`-std=gnu90`, gcc 4.9's default dialect, to catch incompatibilities early.
+
+Install on jessie with `sudo dpkg -i kmgr_1.0.0+deb8_armhf.deb`, then
+`sudo apt-get -f install` if dependencies are missing.

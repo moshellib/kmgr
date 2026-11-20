@@ -1,4 +1,11 @@
 #!/usr/bin/make -f
+#
+# Compat level 10 (debian/compat) so the same packaging builds with
+# debhelper 10 (Debian 8 jessie + backports) and debhelper 13 (Ubuntu 24.04).
+
+# Merged-/usr systems (Ubuntu 24.04) install units under /usr/lib; jessie's
+# init-system-helpers only looks in /lib/systemd/system.
+SYSTEMD_UNITDIR := $(shell if test -L /lib; then echo /usr/lib/systemd/system; else echo /lib/systemd/system; fi)
 
 %:
 	dh $@
@@ -7,11 +14,11 @@ override_dh_auto_build:
 	$(MAKE) all
 
 override_dh_auto_install:
-	$(MAKE) install DESTDIR=$(CURDIR)/debian/kmgr
+	$(MAKE) install DESTDIR=$(CURDIR)/debian/kmgr SYSTEMD_UNITDIR=$(SYSTEMD_UNITDIR)
 
 # /usr/local/bin is explicitly required for the supplied launch scripts.
 override_dh_usrlocal:
 
-override_dh_installsystemd:
-	dh_installsystemd kmgr_uut.service
-	dh_installsystemd --no-enable --no-start kmgr_gu.service
+# Service enable/start/stop is handled explicitly in postinst, prerm and
+# postrm so behaviour is identical across debhelper versions.
+override_dh_installsystemd override_dh_systemd_enable override_dh_systemd_start:

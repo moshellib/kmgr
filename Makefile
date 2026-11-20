@@ -3,14 +3,24 @@ CC = gcc
 CFLAGS = -W -O2 -g -DFRAMER_ALLOW_HANDLERS=1 -DFIX_ENDIAN=0
 K60_FIRMWARE ?= kfs/z_skm.hex
 export K60_FIRMWARE
+# Docker build images: see build.md.
+export KMGR_BUILD_REGISTRY KMGR_BUILD_IMAGE
+SYSTEMD_UNITDIR ?= /usr/lib/systemd/system
+ALL_SRCS = $(wildcard *.c loader/*.c brcm/*.c tests/*.c)
 KMDOBJS = obj/main.o obj/sock.o obj/framer.o obj/seeprom.o obj/log.o obj/cmnutil.o obj/kio.o obj/kmgr.o obj/wdr85100.o obj/entry.o obj/prog.o obj/s19.o obj/serial.o obj/seriallinux.o obj/bcm85100_api.o obj/endian.o obj/hostCommLayer.o obj/hostDriver.o obj/utils.o obj/cmnstruct_api.o 
 MANAGEMENT_TEST_SRCS = $(filter-out main.c kmgr.c,$(wildcard *.c loader/*.c brcm/*.c))
 
 all: kmgr
 
-.PHONY: all clean install deb check-firmware test-loader test-core test-brcm test-protocol test-serial test-management test
+.PHONY: all clean install deb deb-jessie deb-noble deb-all docker-images push-images check-firmware check-c90 test-loader test-core test-brcm test-protocol test-serial test-management test
 
-test: test-loader test-core test-brcm test-protocol test-serial test-management
+test: check-c90 test-loader test-core test-brcm test-protocol test-serial test-management
+
+# Raspbian/Debian jessie ships gcc 4.9, whose default dialect is gnu90.
+check-c90:
+	@for f in $(ALL_SRCS); do \
+		$(CC) -std=gnu90 -fsyntax-only -DFRAMER_ALLOW_HANDLERS=1 -DFIX_ENDIAN=0 -I. $$f || exit 1; \
+	done
 
 test-management:
 	mkdir -p obj
@@ -51,18 +61,39 @@ check-firmware:
 
 install: check-firmware kmgr
 	install -D -m 0755 kmgr $(DESTDIR)/usr/bin/kmgr
-	install -d $(DESTDIR)/etc/kmgr $(DESTDIR)/usr/local/bin $(DESTDIR)/usr/lib/systemd/system $(DESTDIR)/usr/share/kmgr/kfs
+	install -d $(DESTDIR)/etc/kmgr $(DESTDIR)/usr/local/bin $(DESTDIR)$(SYSTEMD_UNITDIR) $(DESTDIR)/usr/share/kmgr/kfs
 	install -m 0644 resources/*.cfg $(DESTDIR)/etc/kmgr/
 	install -m 0755 resources/*.sh $(DESTDIR)/usr/local/bin/
-	install -m 0644 resources/*.service $(DESTDIR)/usr/lib/systemd/system/
+	install -m 0644 resources/*.service $(DESTDIR)$(SYSTEMD_UNITDIR)/
 	install -m 0644 "$(K60_FIRMWARE)" $(DESTDIR)/usr/share/kmgr/kfs/z_skm.hex
 
 deb: check-firmware
 	chmod +x debian/rules
 	dpkg-buildpackage -us -uc -b
 
+# Docker builds: Debian 8 jessie armhf (legacy Raspbian Pis) and
+# Ubuntu 24.04 arm64. Packages are written to dist/<target>/.
+deb-jessie: check-firmware
+	scripts/docker-build.sh jessie
+
+deb-noble: check-firmware
+	scripts/docker-build.sh noble
+
+deb-all: deb-jessie deb-noble
+
+# Build the toolchain images locally (no firmware needed).
+docker-images:
+	scripts/docker-build.sh --image-only jessie
+	scripts/docker-build.sh --image-only noble
+
+# Build and push the toolchain images to KMGR_BUILD_REGISTRY.
+push-images:
+	@test -n "$(KMGR_BUILD_REGISTRY)" || { echo "ERROR: set KMGR_BUILD_REGISTRY=<registry>/<repository>" >&2; exit 1; }
+	scripts/docker-build.sh --push "$(KMGR_BUILD_REGISTRY)" jessie
+	scripts/docker-build.sh --push "$(KMGR_BUILD_REGISTRY)" noble
+
 kmgr: $(KMDOBJS)
-	gcc $(KMDOBJS) -lrt -lpthread -o kmgr
+	$(CC) $(KMDOBJS) -lrt -lpthread -o kmgr
 
 obj/ksh.o: ksh.c
 	mkdir -p obj
@@ -74,39 +105,39 @@ obj/cmnutil.o: cmnutil.c
 
 obj/main.o: main.c
 	mkdir -p obj
-	gcc $(CFLAGS) -c main.c -o obj/main.o
+	$(CC) $(CFLAGS) -c main.c -o obj/main.o
 
 obj/sock.o: sock.c
 	mkdir -p obj
-	gcc $(CFLAGS) -c sock.c -o obj/sock.o
+	$(CC) $(CFLAGS) -c sock.c -o obj/sock.o
 
 obj/kio.o: kio.c
 	mkdir -p obj
-	gcc $(CFLAGS) -c kio.c -o obj/kio.o
+	$(CC) $(CFLAGS) -c kio.c -o obj/kio.o
 
 obj/kmgr.o: kmgr.c
 	mkdir -p obj
-	gcc $(CFLAGS) -c kmgr.c -o obj/kmgr.o
+	$(CC) $(CFLAGS) -c kmgr.c -o obj/kmgr.o
 
 obj/framer.o: framer.c
 	mkdir -p obj
-	gcc $(CFLAGS) -c framer.c -o obj/framer.o
+	$(CC) $(CFLAGS) -c framer.c -o obj/framer.o
 
 obj/cmnstruct_api.o: cmnstruct_api.c
 	mkdir -p obj
-	gcc $(CFLAGS) -c cmnstruct_api.c -o obj/cmnstruct_api.o
+	$(CC) $(CFLAGS) -c cmnstruct_api.c -o obj/cmnstruct_api.o
 
 obj/seeprom.o: seeprom.c
 	mkdir -p obj
-	gcc $(CFLAGS) -c seeprom.c -o obj/seeprom.o
+	$(CC) $(CFLAGS) -c seeprom.c -o obj/seeprom.o
 
 obj/log.o: log.c
 	mkdir -p obj
-	gcc $(CFLAGS) -c log.c -o obj/log.o
+	$(CC) $(CFLAGS) -c log.c -o obj/log.o
 
 obj/wdr85100.o: wdr85100.c wdr85100.h
 	mkdir -p obj
-	gcc $(CFLAGS) -c wdr85100.c -o obj/wdr85100.o
+	$(CC) $(CFLAGS) -c wdr85100.c -o obj/wdr85100.o
 
 obj/entry.o: loader/entry.c loader/hc08sprg.h loader/sysdeplinux.h loader/serial.h
 	mkdir -p obj

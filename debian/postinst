@@ -15,6 +15,24 @@ if [ "$1" = configure ]; then
     db_get kmgr/install-gu
     install_gu="$RET"
     db_stop
+
+    if [ -d /run/systemd/system ]; then
+        systemctl --system daemon-reload >/dev/null || true
+    fi
+
+    # UUT: enabled on first install; an administrator's later disable is kept.
+    deb-systemd-helper unmask kmgr_uut.service >/dev/null || true
+    if deb-systemd-helper --quiet was-enabled kmgr_uut.service; then
+        deb-systemd-helper enable kmgr_uut.service >/dev/null
+    else
+        deb-systemd-helper update-state kmgr_uut.service >/dev/null
+    fi
+    if [ -d /run/systemd/system ]; then
+        deb-systemd-invoke restart kmgr_uut.service
+    fi
+
+    # GU: follows the debconf answer.
+    deb-systemd-helper unmask kmgr_gu.service >/dev/null || true
     if [ "$install_gu" = true ]; then
         deb-systemd-helper enable kmgr_gu.service >/dev/null
         if [ -d /run/systemd/system ]; then
